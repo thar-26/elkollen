@@ -23,13 +23,15 @@ import json
 import logging
 import os
 import time
+from collections import defaultdict, deque
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, ConfigDict, Field
 
 import elkollen_auth
 from elkollen_data import queries
@@ -44,20 +46,72 @@ def _pseudonym(user_id: str | None) -> str | None:
     return hashlib.sha256(user_id.encode()).hexdigest()[:12] if user_id else None
 
 
-def create_app(warehouse: Warehouse | None = None, secret: str | None = None) -> FastAPI:
+class ChatTurn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    """No user field: the user is the verified token's subject."""
+
+    model_config = ConfigDict(extra="forbid")
+    message: str = Field(min_length=1, max_length=1000)
+    history: list[ChatTurn] = Field(default_factory=list, max_length=10)
+    locale: Literal["sv", "en"] = "sv"
+
+
+def _find_exception(exc: BaseException, kind: type[BaseException]) -> BaseException | None:
+    if isinstance(exc, kind):
+        return exc
+    for inner in getattr(exc, "exceptions", ()):
+        found = _find_exception(inner, kind)
+        if found is not None:
+            return found
+    return None
+
+
+class RateLimiter:
+    """Per-user sliding window, in memory (one API process)."""
+
+    def __init__(self, limit: int, window_seconds: float) -> None:
+        self.limit, self.window = limit, window_seconds
+        self._hits: dict[str, deque] = defaultdict(deque)
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        hits = self._hits[key]
+        while hits and now - hits[0] > self.window:
+            hits.popleft()
+        if len(hits) >= self.limit:
+            return False
+        hits.append(now)
+        return True
+
+
+def create_app(
+    warehouse: Warehouse | None = None,
+    secret: str | None = None,
+    *,
+    chat_model=None,
+    mcp_url: str | None = None,
+    mcp_http_client_factory=None,
+    chat_limit: int = 20,
+) -> FastAPI:
     wh = warehouse if warehouse is not None else warehouse_from_env()
     jwt_secret = secret or elkollen_auth.secret_from_env()
+    limiter = RateLimiter(chat_limit, 600)
 
     app = FastAPI(
         title="Elkollen API",
-        version="0.3.0",
+        version="0.4.0",
         description="Swedish 15-minute electricity prices and your own consumption. Read-only.",
     )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[os.environ.get("ELKOLLEN_WEB_ORIGIN", "http://localhost:3000")],
-        allow_methods=["GET"],
-        allow_headers=["Authorization"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     @app.middleware("http")
@@ -167,5 +221,36 @@ def create_app(warehouse: Warehouse | None = None, secret: str | None = None) ->
         return queries.compare_plans(
             wh, profile["user_id"], start_date, end_date, fixed_price_ore_per_kwh
         ).model_dump(mode="json")
+
+    # ------------------------------------------------------------ assistant
+
+    @app.post("/chat")
+    async def chat(body: ChatRequest, profile: Annotated[dict, Depends(active_user)]) -> dict:
+        """Ask the assistant. It answers only through the read-only MCP tools, acting as
+        the signed-in user, and returns the tool calls and numbers it used."""
+        from elkollen_chat import agent
+        from elkollen_chat.llm import ChatModelError, GroqChatModel
+
+        if not limiter.allow(profile["user_id"]):
+            raise HTTPException(status_code=429, detail="too many questions; wait a few minutes")
+        try:
+            model = chat_model or GroqChatModel()
+            async with agent.mcp_session(
+                profile["user_id"], jwt_secret, mcp_url, mcp_http_client_factory
+            ) as session:
+                return await agent.answer(
+                    body.message,
+                    [t.model_dump() for t in body.history],
+                    model=model,
+                    session=session,
+                    locale=body.locale,
+                    price_area=profile["price_area"],
+                )
+        except BaseException as exc:
+            # The MCP client runs in a task group, which wraps errors in ExceptionGroups.
+            provider_error = _find_exception(exc, ChatModelError)
+            if provider_error is not None:
+                raise HTTPException(status_code=503, detail=str(provider_error)) from None
+            raise
 
     return app
