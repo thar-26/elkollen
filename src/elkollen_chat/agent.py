@@ -40,6 +40,9 @@ Rules:
 - Prices are in öre/kWh, costs in SEK. Say that spot prices exclude VAT, energy tax,
   supplier markup and grid fees when you talk about what someone pays.
 - Give times in Swedish local time (use the start_local fields), as HH:MM.
+- Write dates as day and month name (for example "24 november"). Do not write the
+  year unless the user asks for it.
+- Round as written: 176.99 is "177", not "176".
 - Answer in {language}, briefly: two to five sentences.
 Now: {now} (Europe/Stockholm). The user's price area: {area}."""
 
@@ -118,11 +121,11 @@ async def answer(
         turn = await anyio.to_thread.run_sync(model.complete, messages, tools)
         if not turn.tool_calls:
             text = (turn.content or "").strip()
-            results = [t["result"] for t in trace if t["ok"]]
+            evidence = [t["result"] for t in trace if t["ok"]] + [t["arguments"] for t in trace]
             return {
                 "answer": text,
                 "tool_calls": trace,
-                "grounding": grounding.check(text, results, question),
+                "grounding": grounding.check(text, evidence, question),
                 "model": model.name,
             }
         messages.append(
@@ -157,7 +160,7 @@ async def answer(
     return {
         "answer": "",
         "tool_calls": trace,
-        "grounding": {"numbers_checked": 0, "ungrounded": [], "ok": True},
+        "grounding": {"numbers_checked": 0, "ungrounded": [], "unverified_dates": [], "ok": True},
         "model": model.name,
         "error": "the assistant needed too many steps; try a more specific question",
     }
