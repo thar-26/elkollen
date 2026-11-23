@@ -7,9 +7,13 @@ Endpoint: https://www.elprisetjustnu.se/api/v1/prices/{YYYY}/{MM}-{DD}_{AREA}.js
 - No published rate limit. We are polite anyway: one request at a time, a pause between
   requests, a descriptive User-Agent and bounded retries with backoff.
 See docs/data-sources.md.
-"""
 
-from __future__ import annotations
+This module must stay self-contained (stdlib + httpx + pydantic, no imports from the
+elkollen_ingest package): Terraform also ships it, unchanged, as the body of the
+Snowflake stored procedure RAW.INGEST_PRICES (see snowflake_proc.py). For the same
+reason there is no `from __future__ import annotations`: dataclasses would then look
+the module up in sys.modules, which a bare procedure body is not guaranteed to be in.
+"""
 
 import logging
 import math
@@ -20,10 +24,9 @@ from datetime import date, datetime, timedelta
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from elkollen_ingest import AREAS
-
 log = logging.getLogger(__name__)
 
+AREAS: tuple[str, ...] = ("SE1", "SE2", "SE3", "SE4")
 BASE_URL = "https://www.elprisetjustnu.se/api/v1/prices"
 DEFAULT_USER_AGENT = "elkollen/0.1 (portfolio project; contact via GitHub repository)"
 FIRST_AVAILABLE_DAY = date(2022, 11, 1)  # earliest day the API serves
@@ -156,7 +159,7 @@ class ElprisClient:
     def close(self) -> None:
         self._http.close()
 
-    def __enter__(self) -> ElprisClient:
+    def __enter__(self) -> "ElprisClient":
         return self
 
     def __exit__(self, *exc: object) -> None:
