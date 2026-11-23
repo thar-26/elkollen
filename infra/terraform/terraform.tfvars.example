@@ -1,0 +1,11 @@
+# Copy to terraform.tfvars (git-ignored). Public keys only — private keys stay on your machine.
+# Generate a key pair per service user:
+#   openssl genrsa 2048 | openssl pkcs8 -topk8 -inform PEM -out loader_key.p8 -nocrypt
+#   openssl rsa -in loader_key.p8 -pubout -out loader_key.pub
+# Paste the .pub body without the BEGIN/END lines.
+
+admin_private_key_path     = "C:/path/to/admin_key.p8"
+monthly_credit_quota       = 5
+loader_rsa_public_key      = "MIIBIjANBgkqh..."
+transformer_rsa_public_key = "MIIBIjANBgkqh..."
+reader_rsa_public_key      = "MIIBIjANBgkqh..."
