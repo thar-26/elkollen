@@ -79,8 +79,73 @@ class Sink(Protocol):
     def close(self) -> None: ...
 
 
+# Every RAW table a sink may write, with its column order. Table names are never taken
+# from user input; write_table refuses anything not listed here.
+RAW_TABLES: dict[str, tuple[str, ...]] = {
+    "raw.elpris_prices": RAW_COLUMNS,
+    "raw.app_users": (
+        "user_id",
+        "display_name",
+        "price_area",
+        "meter_id",
+        "address",
+        "status",
+        "is_synthetic",
+        "created_at",
+        "ingest_run_id",
+        "loaded_at",
+    ),
+    "raw.consumption_readings": (
+        "user_id",
+        "meter_id",
+        "interval_start_utc",
+        "interval_minutes",
+        "kwh",
+        "source",
+        "ingest_run_id",
+        "loaded_at",
+    ),
+}
+
+APP_DDL_DUCKDB = """
+create schema if not exists raw;
+create table if not exists raw.app_users (
+    user_id varchar not null, display_name varchar, price_area varchar not null,
+    meter_id varchar, address varchar, status varchar not null, is_synthetic boolean not null,
+    created_at timestamp not null, ingest_run_id varchar not null, loaded_at timestamp not null
+);
+create table if not exists raw.consumption_readings (
+    user_id varchar not null, meter_id varchar, interval_start_utc timestamp not null,
+    interval_minutes integer not null, kwh double not null, source varchar not null,
+    ingest_run_id varchar not null, loaded_at timestamp not null
+);
+"""
+
+APP_DDL_SNOWFLAKE = (
+    """create table if not exists raw.app_users (
+    user_id varchar not null, display_name varchar, price_area varchar not null,
+    meter_id varchar, address varchar, status varchar not null, is_synthetic boolean not null,
+    created_at timestamp_ntz not null, ingest_run_id varchar not null,
+    loaded_at timestamp_ntz not null
+) comment = 'App users. Public demo holds synthetic users only.'""",
+    """create table if not exists raw.consumption_readings (
+    user_id varchar not null, meter_id varchar, interval_start_utc timestamp_ntz not null,
+    interval_minutes integer not null, kwh float not null, source varchar not null,
+    ingest_run_id varchar not null, loaded_at timestamp_ntz not null
+) comment = 'Per-user consumption. Public demo holds synthetic readings only.'""",
+)
+
+
+def _insert_sql(table: str, placeholder: str) -> str:
+    if table not in RAW_TABLES:
+        raise ValueError(f"refusing to write to unknown table {table!r}")
+    columns = RAW_TABLES[table]
+    values = ", ".join(placeholder for _ in columns)
+    return f"insert into {table} ({', '.join(columns)}) values ({values})"  # noqa: S608 - allowlisted
+
+
 class DuckDBSink:
-    """Local development and CI. Same table shape as Snowflake RAW."""
+    """Local development and CI. Same table shapes as Snowflake RAW."""
 
     def __init__(self, path: str | os.PathLike[str]) -> None:
         import duckdb
@@ -88,16 +153,16 @@ class DuckDBSink:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._con = duckdb.connect(str(path))
         self._con.execute(DUCKDB_DDL)
+        self._con.execute(APP_DDL_DUCKDB)
 
-    def write(self, rows: Sequence[tuple]) -> int:
+    def write_table(self, table: str, rows: Sequence[tuple]) -> int:
         if not rows:
             return 0
-        placeholders = ", ".join("?" for _ in RAW_COLUMNS)
-        self._con.executemany(
-            f"insert into raw.elpris_prices ({', '.join(RAW_COLUMNS)}) values ({placeholders})",  # noqa: S608 - constant column list
-            rows,
-        )
+        self._con.executemany(_insert_sql(table, "?"), rows)
         return len(rows)
+
+    def write(self, rows: Sequence[tuple]) -> int:
+        return self.write_table("raw.elpris_prices", rows)
 
     def close(self) -> None:
         self._con.close()
@@ -114,6 +179,8 @@ class SnowflakeSink:
         cur = self._con.cursor()
         try:
             cur.execute(SNOWFLAKE_DDL)
+            for ddl in APP_DDL_SNOWFLAKE:
+                cur.execute(ddl)
         finally:
             cur.close()
 
@@ -139,19 +206,18 @@ class SnowflakeSink:
             application="elkollen-ingest",
         )
 
-    def write(self, rows: Sequence[tuple]) -> int:
+    def write_table(self, table: str, rows: Sequence[tuple]) -> int:
         if not rows:
             return 0
-        placeholders = ", ".join("%s" for _ in RAW_COLUMNS)
         cur = self._con.cursor()
         try:
-            cur.executemany(
-                f"insert into raw.elpris_prices ({', '.join(RAW_COLUMNS)}) values ({placeholders})",  # noqa: S608 - constant column list
-                list(rows),
-            )
+            cur.executemany(_insert_sql(table, "%s"), list(rows))
         finally:
             cur.close()
         return len(rows)
+
+    def write(self, rows: Sequence[tuple]) -> int:
+        return self.write_table("raw.elpris_prices", rows)
 
     def close(self) -> None:
         self._con.close()

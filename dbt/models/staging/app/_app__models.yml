@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: stg_app__users
+    columns:
+      - name: user_id
+        data_tests: [unique, not_null]
+      - name: price_area
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: "{{ var('price_areas') }}"
+      - name: status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [active, deleted]
+
+  - name: stg_app__consumption
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [user_id, interval_start_utc]
+      - expression_is_true:
+          name: stg_app__consumption_kwh_is_plausible
+          arguments:
+            # Up to 100 kWh in one quarter-hour (400 kW) is far beyond any home.
+            expression: kwh >= 0 and kwh <= 100
+    columns:
+      - name: user_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_app__users')
+                field: user_id
+      - name: interval_minutes
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [15, 60]
+                quote: false

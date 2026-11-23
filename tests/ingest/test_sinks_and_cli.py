@@ -2,6 +2,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 
 import duckdb
+import pytest
 
 from elkollen_ingest.cli import main
 from elkollen_ingest.elpris import DayPrices, PricePoint
@@ -71,11 +72,22 @@ def test_snowflake_sink_creates_table_and_binds_parameters():
     con = FakeConnection()
     sink = SnowflakeSink(connection=con)
     assert sink.write(to_rows(_day(), "run-1", LOADED_AT)) == 1
-    assert "create table if not exists raw.elpris_prices" in con.log[0][1]
-    kind, sql, rows = con.log[1]
-    assert kind == "executemany"
+    ddl = " ".join(entry[1] for entry in con.log if entry[0] == "execute")
+    for table in ("raw.elpris_prices", "raw.app_users", "raw.consumption_readings"):
+        assert f"create table if not exists {table}" in ddl
+    kind, sql, rows = next(entry for entry in con.log if entry[0] == "executemany")
+    assert sql.startswith("insert into raw.elpris_prices")
     assert sql.count("%s") == len(RAW_COLUMNS)  # values are bound, never formatted in
     assert rows[0][0] == "SE4"
+
+
+def test_sinks_refuse_unknown_tables(tmp_path):
+    sink = DuckDBSink(tmp_path / "x.duckdb")
+    try:
+        with pytest.raises(ValueError, match="unknown table"):
+            sink.write_table("raw.elpris_prices; drop table raw.app_users", [("x",)])
+    finally:
+        sink.close()
 
 
 def test_load_fixtures_cli(tmp_path, monkeypatch):

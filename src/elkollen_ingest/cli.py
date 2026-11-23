@@ -141,7 +141,36 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("directory")
     f.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
     f.set_defaults(func=cmd_load_fixtures)
+
+    s = sub.add_parser(
+        "synthetic-consumption", help="write invented demo users and 15-minute readings"
+    )
+    s.add_argument("--start", type=date.fromisoformat, required=True)
+    s.add_argument("--end", type=date.fromisoformat, required=True)
+    s.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
+    s.set_defaults(func=cmd_synthetic)
     return parser
+
+
+def cmd_synthetic(args: argparse.Namespace) -> int:
+    from elkollen_ingest.sinks import iter_chunks
+    from elkollen_ingest.synthetic import consumption_rows, user_rows
+
+    if args.end < args.start or (args.end - args.start).days > 800:
+        log.error("give --start <= --end, at most 800 days apart")
+        return 2
+    run_id = f"synthetic-{uuid.uuid4()}"
+    loaded_at = datetime.now(UTC).replace(tzinfo=None)
+    sink = make_sink(args.sink)
+    try:
+        users = sink.write_table("raw.app_users", user_rows(run_id, loaded_at))
+        readings = 0
+        for chunk in iter_chunks(consumption_rows(args.start, args.end, run_id, loaded_at)):
+            readings += sink.write_table("raw.consumption_readings", chunk)
+    finally:
+        sink.close()
+    log.info("wrote %s synthetic users and %s readings to %s", users, readings, args.sink)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

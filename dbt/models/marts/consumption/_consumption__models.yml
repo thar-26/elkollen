@@ -1,0 +1,69 @@
+version: 2
+
+models:
+  - name: dim_app_users
+    description: >
+      One row per user. meter_id and address are personal data: masked for every role
+      except TRANSFORMER on Snowflake. Inactive users are hidden from the app role.
+    columns:
+      - name: user_id
+        data_tests: [unique, not_null]
+      - name: price_area
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_price_areas')
+                field: price_area
+
+  - name: fct_consumption_15min
+    description: >
+      One row per user and 15-minute interval with the spot price of the user's area.
+      spot_cost_sek = kWh x spot price (SEK/kWh); it excludes VAT, energy tax,
+      supplier markup and grid fees.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [user_id, interval_start_utc]
+      - expression_is_true:
+          name: fct_consumption_15min_cost_is_kwh_times_price
+          arguments:
+            expression: >
+              not has_price
+              or abs(spot_cost_sek - kwh * price_ore_per_kwh / 100) < 0.0001
+      - expression_is_true:
+          name: fct_consumption_15min_every_reading_has_a_price
+          config:
+            severity: warn
+          arguments:
+            expression: has_price
+    columns:
+      - name: user_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_app_users')
+                field: user_id
+      - name: kwh
+        data_tests: [not_null]
+
+unit_tests:
+  - name: test_fct_consumption_15min_prices_each_reading_in_users_area
+    model: fct_consumption_15min
+    given:
+      - input: ref('stg_app__consumption')
+        rows:
+          - { user_id: u1, interval_start_utc: "2025-10-04 11:00:00", interval_end_utc: "2025-10-04 11:15:00", interval_minutes: 15, kwh: 2.0, source: synthetic }
+          - { user_id: u1, interval_start_utc: "2025-10-04 11:15:00", interval_end_utc: "2025-10-04 11:30:00", interval_minutes: 15, kwh: 1.0, source: synthetic }
+      - input: ref('stg_app__users')
+        rows:
+          - { user_id: u1, price_area: SE4 }
+      - input: ref('fct_prices_15min')
+        rows:
+          - { price_area: SE4, interval_start_utc: "2025-10-04 11:00:00", delivery_date: 2025-10-04, price_sek_per_kwh: -0.02, price_ore_per_kwh: -2.0, is_upsampled_from_hourly: false }
+          - { price_area: SE3, interval_start_utc: "2025-10-04 11:15:00", delivery_date: 2025-10-04, price_sek_per_kwh: 0.5, price_ore_per_kwh: 50.0, is_upsampled_from_hourly: false }
+    expect:
+      rows:
+        # negative price -> negative cost; the SE3 price must not leak into an SE4 user
+        - { user_id: u1, interval_start_utc: "2025-10-04 11:00:00", spot_cost_sek: -0.04, has_price: true }
+        - { user_id: u1, interval_start_utc: "2025-10-04 11:15:00", spot_cost_sek: null, has_price: false }
