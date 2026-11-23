@@ -33,6 +33,9 @@ export function Header({ area, locale, theme, userName }: Props) {
         </ul>
       </nav>
       <div className="ml-auto flex items-center gap-4 text-[15px]">
+        <Link href="/upload" className="font-medium underline-offset-4 hover:underline">
+          {locale === "sv" ? "Din förbrukning" : "Your usage"}
+        </Link>
         <form action={setLocale.bind(null, locale === "sv" ? "en" : "sv")}>
           <button className="underline-offset-4 hover:underline" lang={locale === "sv" ? "en" : "sv"}>
             {t.language}
