@@ -243,10 +243,23 @@ def user_profile(wh: Warehouse, user_id: str) -> dict | None:
     return rows[0] if rows else None
 
 
+def is_deleted(wh: Warehouse, user_id: str) -> bool:
+    """True if the account asked to be deleted. (On Snowflake the app role cannot see
+    such rows at all, so this is False there and the row access policy does the work.)"""
+    check_user_id(user_id)
+    rows = wh.fetch(
+        "select 1 as x from marts.dim_app_users where user_id = :user_id and status = 'deleted'",
+        {"user_id": user_id},
+    )
+    return bool(rows)
+
+
 def cost_of_my_usage(wh: Warehouse, user_id: str, start_date: date, end_date: date) -> Result:
     """What the signed-in user's consumption cost at 15-minute spot prices (max 93 days)."""
     check_user_id(user_id)
     check_range(start_date, end_date, 93)
+    if is_deleted(wh, user_id):
+        raise QueryInputError("this account has been deleted")
     rows, truncated = _fetch(
         wh,
         """select delivery_date,

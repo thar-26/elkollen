@@ -167,6 +167,15 @@ def test_chat_rejects_bad_requests(warehouse, make_mcp_app, payload, headers, st
     assert r.status_code == status
 
 
+def test_new_user_without_data_can_ask_about_prices(warehouse, make_mcp_app):
+    model = ScriptedModel(tool="cost_of_my_usage")
+    r = api(warehouse, make_mcp_app, model).post(
+        "/chat", json={"message": "My bill?"}, headers=auth("google-1234567890")
+    )
+    assert r.status_code == 200
+    assert r.json()["tool_calls"][0]["result"]["data"]["total_kwh"] == 0  # nothing of anyone's
+
+
 def test_chat_is_rate_limited_per_user(warehouse, make_mcp_app):
     client = api(warehouse, make_mcp_app, ScriptedModel(), chat_limit=2)
     codes = [

@@ -225,18 +225,26 @@ def create_app(
     # ------------------------------------------------------------ assistant
 
     @app.post("/chat")
-    async def chat(body: ChatRequest, profile: Annotated[dict, Depends(active_user)]) -> dict:
+    async def chat(body: ChatRequest, user_id: Annotated[str, Depends(current_user)]) -> dict:
         """Ask the assistant. It answers only through the read-only MCP tools, acting as
-        the signed-in user, and returns the tool calls and numbers it used."""
+        the signed-in user, and returns the tool calls and numbers it used.
+        Any signed-in user may ask about prices; personal tools return only their own
+        data (none until they upload). Deleted accounts are refused."""
         from elkollen_chat import agent
         from elkollen_chat.llm import ChatModelError, GroqChatModel
 
-        if not limiter.allow(profile["user_id"]):
+        try:
+            if queries.is_deleted(wh, user_id):
+                raise HTTPException(status_code=403, detail="this account has been deleted")
+            profile = queries.user_profile(wh, user_id)
+        except QueryInputError:
+            raise HTTPException(status_code=403, detail="invalid user") from None
+        if not limiter.allow(user_id):
             raise HTTPException(status_code=429, detail="too many questions; wait a few minutes")
         try:
             model = chat_model or GroqChatModel()
             async with agent.mcp_session(
-                profile["user_id"], jwt_secret, mcp_url, mcp_http_client_factory
+                user_id, jwt_secret, mcp_url, mcp_http_client_factory
             ) as session:
                 return await agent.answer(
                     body.message,
@@ -244,7 +252,7 @@ def create_app(
                     model=model,
                     session=session,
                     locale=body.locale,
-                    price_area=profile["price_area"],
+                    price_area=profile["price_area"] if profile else None,
                 )
         except BaseException as exc:
             # The MCP client runs in a task group, which wraps errors in ExceptionGroups.
