@@ -1,0 +1,58 @@
+name: Ingest prices
+
+# Hybrid ingestion (docs/decisions/0002):
+#   * Fetch: this workflow fetches today's and tomorrow's prices and loads them into
+#     Snowflake RAW, UNLESS the repository variable SNOWFLAKE_NATIVE_INGESTION=true,
+#     in which case the Snowflake task RAW.INGEST_PRICES_DAILY fetches them instead.
+#   * Transform: dbt build + source freshness against Snowflake, always.
+# Disabled until you opt in: set the repository variable SNOWFLAKE_INGEST_ENABLED=true
+# and add the secrets listed below. Each run wakes the XS warehouse briefly, inside
+# the resource monitor's monthly cap.
+#
+# GitHub may start scheduled runs late (hours, on a busy day). That is acceptable:
+# tomorrow's prices only need to land before midnight, there are two runs, and the
+# dbt freshness check fails loudly if a day is missed.
+
+on:
+  schedule:
+    # 12:50 and 15:50 UTC = 13:50/16:50 CET or 14:50/17:50 CEST: after the ~13:00
+    # Stockholm publication, and after the native task's 13:20/16:20 Stockholm runs.
+    - cron: "50 12,15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    if: vars.SNOWFLAKE_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ELKOLLEN_SF_ACCOUNT: ${{ secrets.ELKOLLEN_SF_ACCOUNT }}
+      ELKOLLEN_SF_LOADER_USER: ${{ secrets.ELKOLLEN_SF_LOADER_USER }}
+      ELKOLLEN_SF_TRANSFORMER_USER: ${{ secrets.ELKOLLEN_SF_TRANSFORMER_USER }}
+      ELKOLLEN_USER_AGENT: elkollen/0.1 (+https://github.com/${{ github.repository }})
+      DBT_TARGET: snowflake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -c requirements-lock.txt -e ".[dbt,snowflake]"
+      - name: Write key files (never echoed)
+        env:
+          LOADER_KEY: ${{ secrets.ELKOLLEN_SF_LOADER_PRIVATE_KEY }}
+          TRANSFORMER_KEY: ${{ secrets.ELKOLLEN_SF_TRANSFORMER_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$LOADER_KEY" > "$RUNNER_TEMP/loader.p8"
+          printf '%s\n' "$TRANSFORMER_KEY" > "$RUNNER_TEMP/transformer.p8"
+          echo "ELKOLLEN_SF_LOADER_PRIVATE_KEY_PATH=$RUNNER_TEMP/loader.p8" >> "$GITHUB_ENV"
+          echo "ELKOLLEN_SF_TRANSFORMER_PRIVATE_KEY_PATH=$RUNNER_TEMP/transformer.p8" >> "$GITHUB_ENV"
+      - name: Fetch prices into RAW (skipped when Snowflake fetches natively)
+        if: vars.SNOWFLAKE_NATIVE_INGESTION != 'true'
+        run: elkollen-ingest prices --sink snowflake
+      - run: dbt build --project-dir dbt --profiles-dir dbt --select source:elpris+
+      - run: dbt source freshness --project-dir dbt --profiles-dir dbt

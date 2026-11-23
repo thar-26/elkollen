@@ -1,0 +1,77 @@
+# Elkollen
+
+An electricity assistant for Sweden built on 15-minute day-ahead prices.
+**Status: phase 1 of 6** — data foundation only. No API, assistant or UI yet.
+
+## What works today (and how it was checked)
+
+| Piece | State | Verified by |
+|---|---|---|
+| Price ingestion (elprisetjustnu.se → RAW) | Works | pytest suite; live runs against the API |
+| dbt staging `stg_elpris__prices` | Works on DuckDB **and Snowflake** | `dbt build`: 24 data tests + 2 unit tests pass on both engines on real fixture days; shown to fail on deliberately corrupted data (DuckDB) |
+| Terraform for Snowflake | Applied (2026-11-23) | `terraform apply` created 37 objects on a Snowflake trial account (AWS eu-north-1); a re-plan shows no drift |
+| Snowflake sink and `snowflake` dbt target | Works | Loaded live prices and the fixture days as the LOADER user; dbt ran as the TRANSFORMER user; source freshness passes |
+| Least-privilege roles | Works | `RUN_SNOWFLAKE_TESTS=1 pytest tests/snowflake`: each service user can do its job and is refused everything else (7 checks). Opt-in, not in CI |
+| Scheduled ingestion (GitHub Actions) | Off by default | Not run |
+| Snowflake-native ingestion (procedure + task) | Off by default (`enable_native_ingestion`) | Procedure code tested with a fake Snowpark session, including the exact body Terraform ships; Terraform validates. Not run on Snowflake |
+
+### Hybrid ingestion
+
+Fetching and transforming are split ([decision 0002](docs/decisions/0002-hybrid-ingestion.md)).
+On a Snowflake trial, which cannot call outside APIs, a scheduled GitHub workflow
+fetches prices and loads them as the LOADER user. On a paid account, one Terraform
+variable moves fetching into Snowflake: a task calls a Python procedure that may only
+reach the price API. dbt then builds and tests the models in Snowflake either way.
+
+## Run it locally (no cloud account needed)
+
+```powershell
+py -3.13 -m venv .venv
+.venv\Scripts\activate
+pip install -c requirements-lock.txt -e ".[dev,dbt]"
+
+# Offline: load committed real API responses (DST days, hourly -> 15 min switch)
+$env:DUCKDB_PATH = "data/elkollen.duckdb"
+elkollen-ingest load-fixtures fixtures/elpris
+# or live: today + tomorrow for all areas
+elkollen-ingest prices
+
+dbt build --project-dir dbt --profiles-dir dbt
+pytest
+```
+
+On Windows, if pip fails with a long-path error, create the virtualenv in a short
+path (for example `C:\venvs\elkollen`).
+
+## The hard part: mixed time grain and daylight saving
+
+Prices were hourly until 2025-09-30 and are 15-minute from 2025-10-01. A Swedish day
+has 24 hours, except the last Sunday in March (23) and October (25). So a day has
+24/23/25 hourly rows or 96/92/100 quarter-hour rows. The staging model parses UTC
+from the source's own offset, and a dbt test compares each day's row count with an
+independent DST calendar. The source also has a real quirk on fall-back days (one
+`time_end` is an hour off); see [docs/data-sources.md](docs/data-sources.md).
+Why dbt runs on DuckDB in CI: [docs/decisions/0001](docs/decisions/0001-duckdb-for-local-and-ci.md).
+
+## Layout
+
+```
+infra/terraform/     Snowflake database, schemas, warehouse, resource monitor, roles
+src/elkollen_ingest/ price ingestion CLI (DuckDB or Snowflake sink)
+dbt/                 staging models, generic tests, unit tests
+fixtures/elpris/     real API responses used by tests and CI
+docs/                data sources and terms, decision records
+```
+
+## Known limitations (phase 1)
+
+- The Snowflake-native ingestion path (procedure + task) has not been run: trial accounts cannot call outside APIs.
+- Native ingestion uses provider resources marked "preview"; their schema may change.
+- ENTSO-E and SMHI terms are not verified yet; those sources are not used.
+- No unified 15-minute model, marts, API, MCP server, UI or forecast yet (phases 2–5).
+- Missing *whole days* are not detected yet; a date-spine test comes with the marts.
+
+## Credits
+
+Price data: [elprisetjustnu.se](https://www.elprisetjustnu.se), sourced from the
+ENTSO-E Transparency Platform.
