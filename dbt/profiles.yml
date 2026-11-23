@@ -1,0 +1,24 @@
+# No secrets here: every credential is read from the environment (see .env.example).
+# Pick a target with DBT_TARGET (default: local).
+elkollen:
+  target: "{{ env_var('DBT_TARGET', 'local') }}"
+  outputs:
+    # Laptop development and CI: DuckDB file built from the ingestion CLI or fixtures.
+    local:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', 'data/elkollen.duckdb') }}"
+      schema: main
+      threads: 4
+
+    # Production: Snowflake, as the TRANSFORMER service user with key-pair auth.
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('ELKOLLEN_SF_ACCOUNT') }}"
+      user: "{{ env_var('ELKOLLEN_SF_TRANSFORMER_USER') }}"
+      private_key_path: "{{ env_var('ELKOLLEN_SF_TRANSFORMER_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('ELKOLLEN_SF_TRANSFORMER_ROLE', 'ELKOLLEN_TRANSFORMER') }}"
+      database: "{{ env_var('ELKOLLEN_SF_DATABASE', 'ELKOLLEN') }}"
+      warehouse: "{{ env_var('ELKOLLEN_SF_WAREHOUSE', 'ELKOLLEN_WH') }}"
+      schema: STAGING
+      threads: 4
+      query_tag: elkollen-dbt

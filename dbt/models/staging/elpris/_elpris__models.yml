@@ -1,0 +1,131 @@
+version: 2
+
+models:
+  - name: stg_elpris__prices
+    description: >
+      Day-ahead prices per area at their native resolution (hourly until 2025-09-30,
+      15 minutes from 2025-10-01), deduplicated to the latest load, with UTC and local
+      time parsed from the source's own offset. Negative prices are real and kept.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, interval_start_utc]
+      - expected_intervals_per_day:
+          arguments:
+            partition_by: price_area
+            date_column: delivery_date
+            interval_minutes_column: interval_minutes
+      - contiguous_intervals:
+          arguments:
+            partition_by: price_area
+            start_column: interval_start_utc
+            end_column: interval_end_utc
+            date_column: delivery_date
+      - expression_is_true:
+          name: stg_elpris__prices_price_within_market_limits
+          arguments:
+            expression: >
+              price_eur_per_kwh between {{ var('price_eur_per_kwh_min') }}
+              and {{ var('price_eur_per_kwh_max') }}
+      - expression_is_true:
+          name: stg_elpris__prices_sek_matches_eur_times_rate
+          arguments:
+            # Both prices are rounded to 5 decimals by the source.
+            expression: abs(price_sek_per_kwh - price_eur_per_kwh * eur_sek_rate) < 0.001
+      - expression_is_true:
+          name: stg_elpris__prices_start_is_on_delivery_date
+          arguments:
+            expression: cast(interval_start_local as date) = delivery_date
+    columns:
+      - name: price_area
+        description: Bidding zone SE1 (north) to SE4 (south).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: "{{ var('price_areas') }}"
+      - name: delivery_date
+        description: Local (Europe/Stockholm) delivery day.
+        data_tests: [not_null]
+      - name: interval_start_utc
+        description: Interval start in UTC (timestamp without zone).
+        data_tests: [not_null]
+      - name: interval_end_utc
+        description: Start + interval_minutes. Recomputed; the source's time_end is not trusted.
+        data_tests: [not_null]
+      - name: interval_start_local
+        description: >
+          Wall-clock start in Sweden. Not unique on fall-back days (02:00-02:59 occurs
+          twice); always join on interval_start_utc.
+        data_tests: [not_null]
+      - name: utc_offset_minutes
+        description: Offset from UTC at interval start, 60 (CET) or 120 (CEST).
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [60, 120]
+                quote: false
+      - name: interval_minutes
+        description: Native resolution of this row, 60 or 15.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [15, 60]
+                quote: false
+      - name: source_resolution
+        description: ISO 8601 duration of the native interval, PT60M or PT15M.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [PT15M, PT60M]
+      - name: price_sek_per_kwh
+        description: Spot price in SEK/kWh, excl. VAT, tax and grid fees. Can be negative.
+        data_tests: [not_null]
+      - name: price_ore_per_kwh
+        description: Spot price in öre/kWh (SEK x 100). Can be negative.
+        data_tests: [not_null]
+      - name: price_eur_per_kwh
+        description: Spot price in EUR/kWh as published by ENTSO-E. Can be negative.
+        data_tests: [not_null]
+      - name: eur_sek_rate
+        description: EUR to SEK rate used by the API for this day.
+        data_tests: [not_null]
+      - name: has_source_end_mismatch
+        description: >
+          True where the source's declared time_end differs from start + resolution
+          (the autumn clock-change quirk). Kept for transparency.
+        data_tests: [not_null]
+
+unit_tests:
+  - name: test_stg_elpris__prices_dst_dedupe_and_negative_price
+    description: >
+      Fall-back day: the interval before the clock change declares a wrong end; the
+      model must recompute it, flag it, keep the negative price, and pick the latest
+      of two loads for the same interval.
+    model: stg_elpris__prices
+    given:
+      - input: source('elpris', 'elpris_prices')
+        rows:
+          - { area: SE3, delivery_date: 2025-10-26, time_start: "2025-10-26T02:45:00+02:00", time_end: "2025-10-26T03:00:00+01:00", sek_per_kwh: -0.011, eur_per_kwh: -0.001, exr: 11.0, source_url: u, ingest_run_id: run-1, loaded_at: "2026-01-01 10:00:00" }
+          - { area: SE3, delivery_date: 2025-10-26, time_start: "2025-10-26T02:00:00+01:00", time_end: "2025-10-26T02:15:00+01:00", sek_per_kwh: 0.30, eur_per_kwh: 0.027, exr: 11.0, source_url: u, ingest_run_id: run-1, loaded_at: "2026-01-01 10:00:00" }
+          - { area: SE3, delivery_date: 2025-10-26, time_start: "2025-10-26T02:00:00+01:00", time_end: "2025-10-26T02:15:00+01:00", sek_per_kwh: 0.33, eur_per_kwh: 0.03, exr: 11.0, source_url: u, ingest_run_id: run-2, loaded_at: "2026-01-02 10:00:00" }
+    expect:
+      rows:
+        - { price_area: SE3, interval_start_utc: "2025-10-26 00:45:00", interval_end_utc: "2025-10-26 01:00:00", interval_start_local: "2025-10-26 02:45:00", utc_offset_minutes: 120, interval_minutes: 15, source_resolution: PT15M, price_ore_per_kwh: -1.1, has_source_end_mismatch: true, ingest_run_id: run-1 }
+        - { price_area: SE3, interval_start_utc: "2025-10-26 01:00:00", interval_end_utc: "2025-10-26 01:15:00", interval_start_local: "2025-10-26 02:00:00", utc_offset_minutes: 60, interval_minutes: 15, source_resolution: PT15M, price_ore_per_kwh: 33.0, has_source_end_mismatch: false, ingest_run_id: run-2 }
+
+  - name: test_stg_elpris__prices_hourly_spring_forward
+    description: Hourly era, spring-forward day. 01:00+01:00 is followed by 03:00+02:00, both one hour long.
+    model: stg_elpris__prices
+    given:
+      - input: source('elpris', 'elpris_prices')
+        rows:
+          - { area: SE1, delivery_date: 2025-03-30, time_start: "2025-03-30T01:00:00+01:00", time_end: "2025-03-30T03:00:00+02:00", sek_per_kwh: 0.1, eur_per_kwh: 0.009, exr: 11.0, source_url: u, ingest_run_id: r, loaded_at: "2026-01-01 10:00:00" }
+          - { area: SE1, delivery_date: 2025-03-30, time_start: "2025-03-30T03:00:00+02:00", time_end: "2025-03-30T04:00:00+02:00", sek_per_kwh: 0.1, eur_per_kwh: 0.009, exr: 11.0, source_url: u, ingest_run_id: r, loaded_at: "2026-01-01 10:00:00" }
+    expect:
+      rows:
+        - { interval_start_utc: "2025-03-30 00:00:00", interval_end_utc: "2025-03-30 01:00:00", interval_minutes: 60, source_resolution: PT60M, has_source_end_mismatch: false }
+        - { interval_start_utc: "2025-03-30 01:00:00", interval_end_utc: "2025-03-30 02:00:00", interval_minutes: 60, source_resolution: PT60M, has_source_end_mismatch: false }

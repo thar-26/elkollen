@@ -1,0 +1,37 @@
+version: 2
+
+sources:
+  - name: elpris
+    description: >
+      Day-ahead prices from the free elprisetjustnu.se API (which takes them from the
+      ENTSO-E Transparency Platform). Loaded append-only by `elkollen-ingest prices`.
+      See docs/data-sources.md for terms and known quirks.
+    schema: raw
+    tables:
+      - name: elpris_prices
+        description: One row per price interval per load, exactly as received.
+        config:
+          loaded_at_field: loaded_at
+          freshness:
+            # Ingestion runs at least daily after 13:00 Stockholm time.
+            warn_after: { count: 26, period: hour }
+            error_after: { count: 50, period: hour }
+        columns:
+          - name: area
+            description: Bidding zone SE1-SE4.
+          - name: delivery_date
+            description: Delivery day the request was made for (Europe/Stockholm).
+          - name: time_start
+            description: Interval start as received, ISO 8601 with UTC offset.
+          - name: time_end
+            description: >
+              Interval end as received. Known quirk: wrong by +1 h for the interval just
+              before the autumn clock change. Staging does not trust this column.
+          - name: sek_per_kwh
+          - name: eur_per_kwh
+          - name: exr
+            description: EUR to SEK exchange rate the API used.
+          - name: source_url
+          - name: ingest_run_id
+          - name: loaded_at
+            description: UTC time the row was written.
