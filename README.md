@@ -1,8 +1,10 @@
 # Elkollen
 
 An electricity assistant for Sweden built on 15-minute day-ahead prices.
-**Status: phases 1–3 of 6.** Data platform, unified 15-minute model, marts, a read-only
-MCP server and an HTTP API. No web UI, chat or forecast yet.
+**Status: phases 1–4 of 6.** Data platform, unified 15-minute model, marts, a read-only
+MCP server, an HTTP API, and a web app (Next.js) with the 15-minute price chart and an
+assistant (Groq, `openai/gpt-oss-120b`) that answers only through the MCP tools, with every
+number in an answer checked against the tool results. No upload, forecast or alerts yet.
 
 ## What works today (and how it was checked)
 

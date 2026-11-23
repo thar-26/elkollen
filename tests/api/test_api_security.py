@@ -145,10 +145,14 @@ def test_deleted_or_unknown_users_are_forbidden(client, user_id, path):
 def test_no_endpoint_accepts_a_user_parameter(client):
     spec = client.get("/openapi.json").json()
     for path, methods in spec["paths"].items():
-        assert set(methods) <= {"get"}, f"{path} must be read-only"
+        # Only the assistant takes a POST body (a question); it reads data via MCP tools.
+        allowed = {"get", "post"} if path == "/chat" else {"get"}
+        assert set(methods) <= allowed, f"{path} must be read-only"
         for op in methods.values():
             for p in op.get("parameters", []):
                 assert "user" not in p["name"].lower(), (path, p["name"])
+    chat_body = spec["components"]["schemas"]["ChatRequest"]["properties"]
+    assert not any("user" in name.lower() for name in chat_body), chat_body
 
 
 def test_requests_are_audit_logged_without_raw_user_ids(client, caplog):
