@@ -8,9 +8,10 @@ An electricity assistant for Sweden built on 15-minute day-ahead prices.
 | Piece | State | Verified by |
 |---|---|---|
 | Price ingestion (elprisetjustnu.se → RAW) | Works | pytest suite; live runs against the API |
-| dbt staging `stg_elpris__prices` | Works on DuckDB | `dbt build`: data tests + unit tests pass on real fixture days, and were shown to fail on deliberately corrupted data |
-| Terraform for Snowflake | Validates | `terraform validate` against the provider schema. **Not applied** — needs your account |
-| Snowflake sink and `snowflake` dbt target | Written, not run | Unit test with a fake connection only |
+| dbt staging `stg_elpris__prices` | Works on DuckDB **and Snowflake** | `dbt build`: 24 data tests + 2 unit tests pass on both engines on real fixture days; shown to fail on deliberately corrupted data (DuckDB) |
+| Terraform for Snowflake | Applied (2026-11-23) | `terraform apply` created 37 objects on a Snowflake trial account (AWS eu-north-1); a re-plan shows no drift |
+| Snowflake sink and `snowflake` dbt target | Works | Loaded live prices and the fixture days as the LOADER user; dbt ran as the TRANSFORMER user; source freshness passes |
+| Least-privilege roles | Works | `RUN_SNOWFLAKE_TESTS=1 pytest tests/snowflake`: each service user can do its job and is refused everything else (7 checks). Opt-in, not in CI |
 | Scheduled ingestion (GitHub Actions) | Off by default | Not run |
 | Snowflake-native ingestion (procedure + task) | Off by default (`enable_native_ingestion`) | Procedure code tested with a fake Snowpark session, including the exact body Terraform ships; Terraform validates. Not run on Snowflake |
 
