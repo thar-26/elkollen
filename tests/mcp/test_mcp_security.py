@@ -47,7 +47,8 @@ def call_tool(app, token: str, tool: str, arguments: dict) -> tuple[bool, dict |
     async def go():
         asgi = app()
         async with (
-            asgi.router.lifespan_context(asgi), httpx2.AsyncClient(
+            asgi.router.lifespan_context(asgi),
+            httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=asgi),
                 base_url=BASE,
                 headers={"Authorization": f"Bearer {token}"},
@@ -71,7 +72,8 @@ def list_tools(app, token: str):
     async def go():
         asgi = app()
         async with (
-            asgi.router.lifespan_context(asgi), httpx2.AsyncClient(
+            asgi.router.lifespan_context(asgi),
+            httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=asgi),
                 base_url=BASE,
                 headers={"Authorization": f"Bearer {token}"},
