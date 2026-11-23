@@ -4,7 +4,8 @@ An electricity assistant for Sweden built on 15-minute day-ahead prices.
 **Status: phases 1–4 of 6.** Data platform, unified 15-minute model, marts, a read-only
 MCP server, an HTTP API, and a web app (Next.js) with the 15-minute price chart and an
 assistant (Groq, `openai/gpt-oss-120b`) that answers only through the MCP tools, with every
-number in an answer checked against the tool results. No upload, forecast or alerts yet.
+number in an answer checked against the tool results; a consumption upload analysed in
+memory; a next-day price forecast with an honest backtest; and price alerts.
 
 ## What works today (and how it was checked)
 
@@ -61,6 +62,44 @@ carries the numbers it was computed from, its source tables and what it excludes
 (VAT, tax, markup, grid fees). Inputs are validated, reads are capped at 2,000 rows,
 and every call is audit-logged with a pseudonymous user hash.
 
+## Next-day forecast, and where it loses
+
+The forecast is ported from my earlier project
+[thar-26/elpris-forecast](https://github.com/thar-26/elpris-forecast) (ridge regression,
+walk-forward test, bootstrap verdict) and moved from hours to quarter-hours. Every input is at
+least 24 hours old, so a forecast made today only uses what is known today; a test changes a
+day's prices and checks that day's inputs do not move. Before tomorrow's prices are published
+(about 13:00) the web app shows the forecast, labelled as such, with the numbers below.
+
+Walk-forward test, 60 days (2026-09-26 to 2026-11-24), two years of history on Snowflake,
+mean absolute error in öre/kWh ([reports/forecast_backtest.json](reports/forecast_backtest.json)):
+
+| Area | Same quarter yesterday | Ridge | Lower error | Days better | Verdict |
+|---|---|---|---|---|---|
+| SE1 | 28.32 | 23.84 | 15.8 % | 38 / 60 | beats baseline |
+| SE2 | 32.14 | 26.91 | 16.3 % | 33 / 60 | beats baseline |
+| SE3 | 51.76 | 48.11 | 7.1 % | 33 / 60 | not proven |
+| SE4 | 62.70 | 62.45 | 0.4 % | 30 / 60 | not proven |
+
+Honestly: prices alone forecast the north well and the volatile south barely better than
+"same as yesterday". "Same quarter last week" is worse everywhere. Weather and wind inputs
+(SMHI, ENTSO-E) are the most likely improvement; they are not connected yet.
+
+## Your consumption
+
+`/upload` takes a CSV export from your grid company (hourly or 15-minute, Swedish formats,
+including the repeated hour on the autumn clock change). It shows what you paid at spot
+prices, what it would have cost with a chosen share of each day's use moved into that day's
+cheapest four hours (an estimate with a stated assumption), and a monthly trend. The file is
+analysed in memory and **not stored**. An invented example file is in
+[fixtures/consumption](fixtures/consumption/exempel_timvarden.csv).
+
+## Alerts
+
+For each published day: negative quarters, a cheap two-hour window (below half the 30-day
+average) and spikes (above twice it), each shown with its numbers. Shown in the app; no
+e-mail or push notifications.
+
 ## Privacy
 
 - The public demo uses **synthetic** users and consumption only. No real meter data is
@@ -98,7 +137,9 @@ docs/                 data sources and terms, decision records
   connected yet (ENTSO-E token pending, SMHI terms to verify).
 - The Snowflake-native ingestion path has not been run: trial accounts cannot call
   outside APIs. Some of its Terraform resources are "preview" in the provider.
-- No web UI, chat, upload, forecast or alerts yet (phases 4–5).
+- The forecast uses prices only; in SE3 and SE4 its gain over "same as yesterday" is not
+  proven. Uploaded consumption is not stored, so the assistant's personal tools only see the
+  synthetic demo users. Alerts are shown in the app only.
 
 ## Credits
 

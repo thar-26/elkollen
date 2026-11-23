@@ -23,7 +23,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       # Tests build their own DuckDB warehouse with dbt and exercise the API and MCP server.
-      - run: pip install -c requirements-lock.txt -e ".[dev,dbt,api]"
+      - run: pip install -c requirements-lock.txt -e ".[dev,dbt,api,forecast]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
