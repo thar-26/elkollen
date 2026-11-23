@@ -27,8 +27,9 @@ locals {
     loader_raw          = { role = "LOADER", schema = local.raw, privileges = ["USAGE", "CREATE TABLE"] }
     transformer_raw     = { role = "TRANSFORMER", schema = local.raw, privileges = ["USAGE"] }
     transformer_staging = { role = "TRANSFORMER", schema = local.staging, privileges = ["USAGE", "CREATE TABLE", "CREATE VIEW"] }
-    transformer_marts   = { role = "TRANSFORMER", schema = local.marts, privileges = ["USAGE", "CREATE TABLE", "CREATE VIEW"] }
-    reader_marts        = { role = "READER", schema = local.marts, privileges = ["USAGE"] }
+    # dbt also creates the masking and row access policies for per-user marts (decision 0003).
+    transformer_marts = { role = "TRANSFORMER", schema = local.marts, privileges = ["USAGE", "CREATE TABLE", "CREATE VIEW", "CREATE MASKING POLICY", "CREATE ROW ACCESS POLICY"] }
+    reader_marts      = { role = "READER", schema = local.marts, privileges = ["USAGE"] }
   }
 
   # object-level privileges, applied to existing ("all") and future objects

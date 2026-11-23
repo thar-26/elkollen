@@ -29,9 +29,18 @@ models:
     staging:
       +schema: staging
       +materialized: view
+    # Intermediate models live next to staging: Terraform creates exactly three
+    # schemas (RAW, STAGING, MARTS) and the READER role cannot see STAGING.
+    intermediate:
+      +schema: staging
+      +materialized: view
     marts:
       +schema: marts
       +materialized: table
+
+seeds:
+  elkollen:
+    +schema: marts
 
 data_tests:
   elkollen:

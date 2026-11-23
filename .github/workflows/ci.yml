@@ -17,12 +17,13 @@ jobs:
     name: Python (ruff + pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -c requirements-lock.txt -e ".[dev,dbt]"
+      # Tests build their own DuckDB warehouse with dbt and exercise the API and MCP server.
+      - run: pip install -c requirements-lock.txt -e ".[dev,dbt,api]"
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest
@@ -34,16 +35,24 @@ jobs:
       DUCKDB_PATH: data/ci.duckdb
       DBT_TARGET: local
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
       - run: pip install -c requirements-lock.txt -e ".[dbt]"
       - name: Load fixtures into RAW (offline, no network)
         run: elkollen-ingest load-fixtures fixtures/elpris
+      - name: Synthetic demo users (no real meter data)
+        run: elkollen-ingest synthetic-consumption --start 2025-09-29 --end 2025-10-05
       - name: dbt build (models, data tests, unit tests)
-        run: dbt build --project-dir dbt --profiles-dir dbt
+        # Fixtures are separate windows of real days, so the "no missing days" check
+        # runs on the contiguous window 2025-09-29..2025-10-05 (the hourly -> 15-minute
+        # switch). Tests tagged `live` are about the real clock (is tomorrow's price
+        # in?) and run in the scheduled Snowflake workflow, not on fixtures.
+        run: >
+          dbt build --project-dir dbt --profiles-dir dbt --exclude tag:live
+          --vars '{price_continuity_start: "2025-09-29", price_continuity_end: "2025-10-05"}'
       - name: dbt docs generate
         run: dbt docs generate --project-dir dbt --profiles-dir dbt
 
@@ -54,8 +63,8 @@ jobs:
       run:
         working-directory: infra/terraform
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false -input=false
       - run: terraform validate

@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: app
+    description: >
+      Per-user data. The public demo holds only synthetic users and readings
+      (`elkollen-ingest synthetic-consumption`). Uploads arrive in phase 5.
+    schema: raw
+    tables:
+      - name: app_users
+        description: One row per user per load. Append-only.
+      - name: consumption_readings
+        description: One row per user, interval and load. Append-only. kWh per interval.

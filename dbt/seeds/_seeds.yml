@@ -1,0 +1,10 @@
+version: 2
+
+seeds:
+  - name: dim_price_areas
+    description: The four Swedish bidding zones with Swedish and English names.
+    config:
+      schema: marts
+    columns:
+      - name: price_area
+        data_tests: [unique, not_null]

@@ -25,6 +25,7 @@ from elkollen_ingest.sinks import DuckDBSink, Sink, SnowflakeSink, to_rows
 
 log = logging.getLogger("elkollen_ingest")
 STOCKHOLM = ZoneInfo("Europe/Stockholm")
+BATCH_ROWS = 5000
 MAX_DAYS_PER_RUN = 1100  # ~3 years x 4 areas ≈ 4400 requests; protects the free API
 
 
@@ -72,6 +73,9 @@ def cmd_prices(args: argparse.Namespace) -> int:
 
     sink = make_sink(args.sink)
     user_agent = os.environ.get("ELKOLLEN_USER_AGENT", DEFAULT_USER_AGENT)
+    # Rows are written in batches: one INSERT per ~5000 rows instead of one per area-day,
+    # so a long backfill keeps the Snowflake warehouse awake for minutes, not an hour.
+    buffer: list[tuple] = []
     try:
         with ElprisClient(user_agent=user_agent) as client:
             for day in daterange(start, end):
@@ -90,9 +94,16 @@ def cmd_prices(args: argparse.Namespace) -> int:
                         (save_dir / f"{day.isoformat()}_{area}.json").write_text(
                             json.dumps(payload, indent=0), encoding="utf-8"
                         )
-                    written += sink.write(to_rows(prices, run_id, loaded_at))
+                    buffer.extend(to_rows(prices, run_id, loaded_at))
+                    if len(buffer) >= BATCH_ROWS:
+                        written += sink.write(buffer)
+                        buffer = []
     finally:
-        sink.close()
+        try:
+            if buffer:  # keep what was fetched even if a later day failed
+                written += sink.write(buffer)
+        finally:
+            sink.close()
 
     log.info("run %s: wrote %s rows to %s", run_id, written, args.sink)
     if missing:
@@ -141,7 +152,52 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("directory")
     f.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
     f.set_defaults(func=cmd_load_fixtures)
+
+    s = sub.add_parser(
+        "synthetic-consumption", help="write invented demo users and 15-minute readings"
+    )
+    s.add_argument("--start", type=date.fromisoformat, required=True)
+    s.add_argument("--end", type=date.fromisoformat, required=True)
+    s.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
+    s.add_argument(
+        "--with-deleted-user",
+        action="store_true",
+        help="also load a demo user with status 'deleted' (to verify deletion hiding)",
+    )
+    s.set_defaults(func=cmd_synthetic)
     return parser
+
+
+def cmd_synthetic(args: argparse.Namespace) -> int:
+    from elkollen_ingest.sinks import iter_chunks
+    from elkollen_ingest.synthetic import (
+        DELETED_DEMO_USER,
+        DEMO_USERS,
+        consumption_rows,
+        user_rows,
+    )
+
+    if args.end < args.start or (args.end - args.start).days > 800:
+        log.error("give --start <= --end, at most 800 days apart")
+        return 2
+    run_id = f"synthetic-{uuid.uuid4()}"
+    loaded_at = datetime.now(UTC).replace(tzinfo=None)
+    people = list(DEMO_USERS)
+    rows = user_rows(run_id, loaded_at)
+    if getattr(args, "with_deleted_user", False):
+        people.append(DELETED_DEMO_USER)
+        rows += user_rows(run_id, loaded_at, users=(DELETED_DEMO_USER,), status="deleted")
+    sink = make_sink(args.sink)
+    try:
+        users = sink.write_table("raw.app_users", rows)
+        readings = 0
+        readings_iter = consumption_rows(args.start, args.end, run_id, loaded_at, tuple(people))
+        for chunk in iter_chunks(readings_iter):
+            readings += sink.write_table("raw.consumption_readings", chunk)
+    finally:
+        sink.close()
+    log.info("wrote %s synthetic users and %s readings to %s", users, readings, args.sink)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
