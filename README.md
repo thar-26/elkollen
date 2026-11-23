@@ -64,7 +64,7 @@ docs/                data sources and terms, decision records
 
 ## Known limitations (phase 1)
 
-- Snowflake resources and the Snowflake code paths have not been run against a real account.
+- The Snowflake-native ingestion path (procedure + task) has not been run: trial accounts cannot call outside APIs.
 - Native ingestion uses provider resources marked "preview"; their schema may change.
 - ENTSO-E and SMHI terms are not verified yet; those sources are not used.
 - No unified 15-minute model, marts, API, MCP server, UI or forecast yet (phases 2–5).
