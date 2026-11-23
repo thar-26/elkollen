@@ -68,6 +68,13 @@ export const dict = {
       "Sedan 1 oktober 2025 sätts spotpriset för varje kvart, inte för varje timme. Priset kan ändras fyra gånger i timmen.",
     sourceLine:
       "Källa: day-ahead-auktionen (SDAC), publicerad av ENTSO-E, hämtad via elprisetjustnu.se.",
+    forecastTitle: "Prognos för i morgon",
+    forecastNote: (gain: string, verdict: string, days: number) =>
+      `Inte publicerade priser. Modellen (ridge) har ${gain} % lägre fel än gårdagens pris under ${days} testdagar: ${verdict}.`,
+    verdicts: { "beats baseline": "bevisat bättre", "not proven": "inte bevisat", worse: "sämre" } as Record<string, string>,
+    alertNegative: (n: number, low: string) => `${n} kvartar med negativt pris, lägst ${low} öre/kWh.`,
+    alertCheap: (from: string, to: string, v: string) => `Mycket billigt ${from}–${to}: snitt ${v} öre/kWh.`,
+    alertSpike: (at: string, v: string, avg: string) => `Pristopp ${at}: ${v} öre/kWh (30-dagarssnitt ${avg}).`,
     tools: {
       get_prices: "Hämtade priser",
       cheapest_window: "Sökte billigaste tid",
@@ -143,6 +150,13 @@ export const dict = {
       "Since 1 October 2025 the spot price is set for every quarter-hour, not every hour. It can change four times an hour.",
     sourceLine:
       "Source: the day-ahead auction (SDAC), published by ENTSO-E, fetched via elprisetjustnu.se.",
+    forecastTitle: "Forecast for tomorrow",
+    forecastNote: (gain: string, verdict: string, days: number) =>
+      `Not published prices. Over ${days} test days the model (ridge) had ${gain} % lower error than yesterday's price: ${verdict}.`,
+    verdicts: { "beats baseline": "proven better", "not proven": "not proven", worse: "worse" } as Record<string, string>,
+    alertNegative: (n: number, low: string) => `${n} quarters with a negative price, lowest ${low} öre/kWh.`,
+    alertCheap: (from: string, to: string, v: string) => `Very cheap ${from}–${to}: average ${v} öre/kWh.`,
+    alertSpike: (at: string, v: string, avg: string) => `Price spike at ${at}: ${v} öre/kWh (30-day average ${avg}).`,
     tools: {
       get_prices: "Fetched prices",
       cheapest_window: "Searched cheapest time",

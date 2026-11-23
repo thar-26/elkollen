@@ -123,6 +123,30 @@ export function DayView({ days, area, locale, nowUtc }: Props) {
                 </div>
               ))}
             </dl>
+            {(day.alerts ?? []).length > 0 && (
+              <ul aria-label="Alerts" className="mt-8 max-w-prose space-y-2">
+                {(day.alerts ?? []).map((a) => (
+                  <li key={a.kind} className="flex gap-3 text-[16px]">
+                    <span
+                      aria-hidden
+                      className={`mt-2 inline-block h-2.5 w-2.5 shrink-0 rounded-full ${a.kind === "spike" ? "bg-dear" : "bg-cheap"}`}
+                    />
+                    <span>
+                      {a.kind === "negative_prices" &&
+                        t.alertNegative(a.n_quarters ?? 0, ore(a.lowest_ore_per_kwh ?? 0, locale))}
+                      {a.kind === "cheap_window" &&
+                        t.alertCheap(localTime(a.start_utc!), localTime(a.end_utc!), ore(a.avg_ore_per_kwh ?? 0, locale))}
+                      {a.kind === "spike" &&
+                        t.alertSpike(
+                          localTime(a.start_utc!),
+                          ore(a.price_ore_per_kwh ?? 0, locale),
+                          ore(a.avg_30d_ore_per_kwh ?? 0, locale),
+                        )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
             <div className="mt-10">
               <PriceChart
                 intervals={intervals}
@@ -138,9 +162,42 @@ export function DayView({ days, area, locale, nowUtc }: Props) {
             </p>
           </>
         ) : (
-          <p className="mt-10 max-w-prose rounded-sm bg-raised p-6 text-[17px]">
-            {dayIdx === 1 ? t.notPublished : t.noData}
-          </p>
+          <>
+            <p className="mt-10 max-w-prose rounded-sm bg-raised p-6 text-[17px]">
+              {dayIdx === 1 ? t.notPublished : t.noData}
+            </p>
+            {day.forecast && day.forecast.intervals.length > 0 && (
+              <section aria-labelledby="forecast-heading" className="mt-10">
+                <h2 id="forecast-heading" className="text-[22px] font-semibold tracking-[-0.01em]">
+                  {t.forecastTitle}
+                </h2>
+                {day.forecast.backtest && (
+                  <p className="mt-2 max-w-prose text-[15px] text-muted">
+                    {t.forecastNote(
+                      ore(day.forecast.backtest.gain_pct, locale),
+                      t.verdicts[day.forecast.backtest.verdict] ?? day.forecast.backtest.verdict,
+                      day.forecast.backtest.days,
+                    )}
+                  </p>
+                )}
+                <div className="mt-6">
+                  <PriceChart
+                    intervals={day.forecast.intervals.map((f) => ({
+                      start_utc: f.start_utc,
+                      end_utc: new Date(Date.parse(`${f.start_utc}Z`) + 15 * 60_000).toISOString().slice(0, 19),
+                      start_local: f.start_utc,
+                      price_ore_per_kwh: f.forecast_ore_per_kwh,
+                      upsampled_from_hourly: false,
+                    }))}
+                    cheapest={null}
+                    dearest={null}
+                    locale={locale}
+                    title={`${t.forecastTitle}, ${area}`}
+                  />
+                </div>
+              </section>
+            )}
+          </>
         )}
       </section>
 

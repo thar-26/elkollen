@@ -53,10 +53,36 @@ export const DEVICES: Device[] = [
   { id: "car", minutes: 240 },
 ];
 
+export interface ForecastResult {
+  published: boolean;
+  intervals: { start_utc: string; forecast_ore_per_kwh: number }[];
+  backtest?: {
+    ridge_mae_ore_per_kwh: number;
+    baseline_mae_ore_per_kwh: number;
+    gain_pct: number;
+    days: number;
+    verdict: string;
+  } | null;
+}
+
+export interface Alert {
+  kind: "negative_prices" | "cheap_window" | "spike";
+  n_quarters?: number;
+  lowest_ore_per_kwh?: number;
+  start_utc?: string;
+  end_utc?: string;
+  first_start_utc?: string;
+  avg_ore_per_kwh?: number;
+  price_ore_per_kwh?: number;
+  avg_30d_ore_per_kwh?: number;
+}
+
 export interface DayData {
   date: string;
   prices: PricesResult | null;
   windows: Record<number, WindowResult | null>;
+  forecast?: ForecastResult | null;
+  alerts?: Alert[];
 }
 
 export interface ToolCallTrace {
