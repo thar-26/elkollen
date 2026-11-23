@@ -64,6 +64,11 @@ def build_features(prices: pd.DataFrame, until: pd.Timestamp | None = None) -> p
         frame["weekend"] = (local.dayofweek >= 5).astype(int)
         frame["local_date"] = local.date
         frame["area"] = area
+        if until is not None:
+            # On the autumn clock-change day (25 hours) the last hour's "same quarter
+            # yesterday" lies inside the day being forecast, so it is not known yet.
+            # Future rows carry the newest known inputs forward, for at most one hour.
+            frame[FEATURES] = frame[FEATURES].ffill(limit=4)
         frame.index.name = "start_utc"
         frames.append(frame.reset_index())
 
