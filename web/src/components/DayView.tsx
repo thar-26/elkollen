@@ -5,9 +5,46 @@ import { useState } from "react";
 import { PriceChart } from "@/components/PriceChart";
 import { localTime, longDate, ore } from "@/lib/format";
 import { dict, type Locale } from "@/lib/i18n";
-import { type Area, DEVICES, type DayData } from "@/lib/types";
+import { type Area, DEVICES, type DayData, type Interval } from "@/lib/types";
 
 type Props = { days: DayData[]; area: Area; locale: Locale; nowUtc: string };
+
+/** The next twelve quarter-hours as one row: time on top, price below, a bar whose
+ *  height is the price on a zero baseline shared by the row. Makes the 15-minute
+ *  rhythm visible at a glance; the current quarter is inverted. */
+function UpcomingQuarters({ intervals, nowUtc, locale }: { intervals: Interval[]; nowUtc: string; locale: Locale }) {
+  const t = dict[locale];
+  const start = intervals.findIndex((i) => i.start_utc <= nowUtc && nowUtc < i.end_utc);
+  const next = intervals.slice(start, start + 12);
+  const top = Math.max(...next.map((i) => Math.abs(i.price_ore_per_kwh)), 1);
+  return (
+    <section aria-labelledby="upcoming-heading" className="mt-10">
+      <h2 id="upcoming-heading" className="text-[15px] text-muted">
+        {t.upcoming}
+      </h2>
+      <ol className="mt-3 grid grid-cols-4 gap-1 sm:grid-cols-6 md:grid-cols-12">
+        {next.map((iv, i) => (
+          <li
+            key={iv.start_utc}
+            aria-current={i === 0 ? "time" : undefined}
+            className={`${i >= 8 ? "hidden sm:flex" : "flex"} flex-col justify-between rounded-sm px-2 pt-2 pb-0 ${
+              i === 0 ? "bg-ink text-ground" : "bg-raised"
+            }`}
+          >
+            <span className="text-[13px] opacity-80">{localTime(iv.start_utc)}</span>
+            <span className="mt-1 text-[17px] font-semibold">{ore(iv.price_ore_per_kwh, locale, 0)}</span>
+            <span className="mt-2 flex h-10 items-end" aria-hidden>
+              <span
+                className={`w-full rounded-t-[2px] ${iv.price_ore_per_kwh < 0 ? "bg-cheap" : i === 0 ? "bg-ground" : "bg-bar"}`}
+                style={{ height: `${Math.max(4, (Math.abs(iv.price_ore_per_kwh) / top) * 40)}px` }}
+              />
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
 
 export function DayView({ days, area, locale, nowUtc }: Props) {
   const t = dict[locale];
@@ -42,21 +79,39 @@ export function DayView({ days, area, locale, nowUtc }: Props) {
           ))}
         </div>
 
-        <h1 id="day-heading" className="text-[clamp(2rem,5vw,3.5rem)] leading-[1.02] font-semibold tracking-[-0.03em]">
-          {t.chartTitle(dayLabel, area)}
+        <p className="text-[17px] text-muted first-letter:uppercase">
+          {area} · {longDate(day.date, locale)}
+        </p>
+        <h1
+          id="day-heading"
+          className="mt-3 max-w-[18ch] text-[clamp(2rem,5vw,3.5rem)] leading-[1.02] font-semibold tracking-[-0.03em]"
+        >
+          {nowInterval
+            ? t.quarterNow(localTime(nowInterval.start_utc), localTime(nowInterval.end_utc))
+            : summary
+              ? t.dayHeadline(intervals.length)
+              : t.chartTitle(dayLabel, area)}
         </h1>
-        <p className="mt-2 text-[17px] text-muted first-letter:uppercase">{longDate(day.date, locale)}</p>
 
         {summary ? (
           <>
+            {nowInterval && (
+              <p className="mt-4 text-[clamp(3.5rem,10vw,7rem)] leading-none font-semibold tracking-[-0.045em]">
+                {ore(nowInterval.price_ore_per_kwh, locale)}
+                <span className="ml-3 text-[20px] font-normal tracking-normal text-muted">
+                  {t.priceUnit}
+                </span>
+              </p>
+            )}
+            {nowInterval && (
+              <UpcomingQuarters
+                intervals={[...intervals, ...(days[1]?.prices?.data.intervals ?? [])]}
+                nowUtc={nowUtc}
+                locale={locale}
+              />
+            )}
+            <p className="mt-8 max-w-prose text-[17px]">{t.switchNote}</p>
             <dl className="mt-8 flex flex-wrap items-end gap-x-10 gap-y-4">
-              <div>
-                <dt className="text-[15px] text-muted">{nowInterval ? t.now : t.avg}</dt>
-                <dd className="text-[clamp(3rem,8vw,5.5rem)] leading-none font-semibold tracking-[-0.04em]">
-                  {ore(nowInterval ? nowInterval.price_ore_per_kwh : summary.avg_ore_per_kwh, locale)}
-                  <span className="ml-2 text-[18px] font-normal tracking-normal text-muted">{t.priceUnit}</span>
-                </dd>
-              </div>
               {[
                 [t.min, summary.min_ore_per_kwh],
                 [t.avg, summary.avg_ore_per_kwh],
@@ -79,7 +134,7 @@ export function DayView({ days, area, locale, nowUtc }: Props) {
               />
             </div>
             <p className="mt-4 max-w-prose text-[14px] text-muted">
-              {t.chartNote} {hourly ? t.hourlyNote : ""}
+              {t.chartNote} {hourly ? t.hourlyNote : ""} {t.sourceLine}
             </p>
           </>
         ) : (

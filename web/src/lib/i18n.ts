@@ -61,6 +61,13 @@ export const dict = {
       string
     >,
     source: "Priser: elprisetjustnu.se (ENTSO-E). Demo med påhittad förbrukning.",
+    quarterNow: (from: string, to: string) => `Kvarten ${from}–${to} kostar elen`,
+    dayHeadline: (n: number) => `${n} kvartar, ${n === 96 ? "ett pris för varje" : "en dag med klockbyte"}`,
+    upcoming: "De närmaste tre timmarna, kvart för kvart",
+    switchNote:
+      "Sedan 1 oktober 2025 sätts spotpriset för varje kvart, inte för varje timme. Priset kan ändras fyra gånger i timmen.",
+    sourceLine:
+      "Källa: day-ahead-auktionen (SDAC), publicerad av ENTSO-E, hämtad via elprisetjustnu.se.",
     tools: {
       get_prices: "Hämtade priser",
       cheapest_window: "Sökte billigaste tid",
@@ -129,6 +136,13 @@ export const dict = {
       string
     >,
     source: "Prices: elprisetjustnu.se (ENTSO-E). Demo with invented consumption.",
+    quarterNow: (from: string, to: string) => `From ${from} to ${to} electricity costs`,
+    dayHeadline: (n: number) => `${n} quarter-hours, ${n === 96 ? "a price for each" : "a clock-change day"}`,
+    upcoming: "The next three hours, quarter by quarter",
+    switchNote:
+      "Since 1 October 2025 the spot price is set for every quarter-hour, not every hour. It can change four times an hour.",
+    sourceLine:
+      "Source: the day-ahead auction (SDAC), published by ENTSO-E, fetched via elprisetjustnu.se.",
     tools: {
       get_prices: "Fetched prices",
       cheapest_window: "Searched cheapest time",
