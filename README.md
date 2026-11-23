@@ -1,7 +1,7 @@
 # Elkollen
 
 An electricity assistant for Sweden built on 15-minute day-ahead prices.
-**Status: phases 1–4 of 6.** Data platform, unified 15-minute model, marts, a read-only
+**Status: phases 1–5 of 6.** Data platform, unified 15-minute model, marts, a read-only
 MCP server, an HTTP API, and a web app (Next.js) with the 15-minute price chart and an
 assistant (Groq, `openai/gpt-oss-120b`) that answers only through the MCP tools, with every
 number in an answer checked against the tool results; a consumption upload analysed in
@@ -110,8 +110,8 @@ e-mail or push notifications.
   and its limits: [decision 0003](docs/decisions/0003-user-isolation-and-privacy.md).
 - Deleting a user: set their status to `deleted` (hidden from the app immediately by the
   application and by a Snowflake row access policy), then purge their rows from
-  `raw.app_users` and `raw.consumption_readings` and rebuild. A self-service delete
-  button comes with the upload page in phase 5.
+  `raw.app_users` and `raw.consumption_readings` and rebuild. There is no self-service
+  delete button yet; uploaded files are never stored, so there is nothing of theirs to delete.
 
 ## Layout
 
@@ -122,6 +122,9 @@ src/elkollen_data/    read-only query layer shared by API and MCP
 src/elkollen_mcp/     MCP server (official Python SDK)
 src/elkollen_api/     FastAPI backend
 src/elkollen_auth/    short-lived backend tokens
+src/elkollen_chat/    assistant: Groq model, MCP client, grounding check
+src/elkollen_forecast/ next-day forecast and backtest
+web/                  Next.js app (prices, assistant, upload)
 dbt/                  staging, intermediate (15-min grain), marts, tests, privacy policies
 fixtures/elpris/      real API responses used by tests and CI
 docs/                 data sources and terms, decision records
