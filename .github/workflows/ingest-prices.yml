@@ -1,0 +1,47 @@
+name: Ingest prices
+
+# Fetches today's and tomorrow's prices into Snowflake RAW, then rebuilds staging.
+# Disabled until you opt in: set the repository variable SNOWFLAKE_INGEST_ENABLED=true
+# and add the secrets listed below. Each run wakes the XS warehouse briefly, inside
+# the resource monitor's monthly cap.
+
+on:
+  schedule:
+    # 12:20 and 15:20 UTC = after the ~13:00 Stockholm publication, CET and CEST.
+    - cron: "20 12,15 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ingest:
+    if: vars.SNOWFLAKE_INGEST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ELKOLLEN_SF_ACCOUNT: ${{ secrets.ELKOLLEN_SF_ACCOUNT }}
+      ELKOLLEN_SF_LOADER_USER: ${{ secrets.ELKOLLEN_SF_LOADER_USER }}
+      ELKOLLEN_SF_TRANSFORMER_USER: ${{ secrets.ELKOLLEN_SF_TRANSFORMER_USER }}
+      ELKOLLEN_USER_AGENT: elkollen/0.1 (+https://github.com/${{ github.repository }})
+      DBT_TARGET: snowflake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -c requirements-lock.txt -e ".[dbt,snowflake]"
+      - name: Write key files (never echoed)
+        env:
+          LOADER_KEY: ${{ secrets.ELKOLLEN_SF_LOADER_PRIVATE_KEY }}
+          TRANSFORMER_KEY: ${{ secrets.ELKOLLEN_SF_TRANSFORMER_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s\n' "$LOADER_KEY" > "$RUNNER_TEMP/loader.p8"
+          printf '%s\n' "$TRANSFORMER_KEY" > "$RUNNER_TEMP/transformer.p8"
+          echo "ELKOLLEN_SF_LOADER_PRIVATE_KEY_PATH=$RUNNER_TEMP/loader.p8" >> "$GITHUB_ENV"
+          echo "ELKOLLEN_SF_TRANSFORMER_PRIVATE_KEY_PATH=$RUNNER_TEMP/transformer.p8" >> "$GITHUB_ENV"
+      - run: elkollen-ingest prices --sink snowflake
+      - run: dbt build --project-dir dbt --profiles-dir dbt --select source:elpris+
+      - run: dbt source freshness --project-dir dbt --profiles-dir dbt
