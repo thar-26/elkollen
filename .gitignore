@@ -34,3 +34,7 @@ infra/terraform/.terraform/
 # node (phase 4)
 node_modules/
 .next/
+
+# saved terraform plans
+tfplan
+*.tfplan

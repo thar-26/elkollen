@@ -21,9 +21,8 @@ provider "snowflake" {
 
   # Needed only for native_ingestion.tf. These resources are marked "preview" by the
   # provider (their schema may change between minor versions), so the version is pinned
-  # by .terraform.lock.hcl.
+  # by .terraform.lock.hcl. snowflake_network_rule is already stable in 2.23.
   preview_features_enabled = [
-    "snowflake_network_rule_resource",
     "snowflake_external_access_integration_resource",
     "snowflake_procedure_python_resource",
   ]
