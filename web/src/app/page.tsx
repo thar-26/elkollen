@@ -13,8 +13,10 @@ import { readPrefs } from "@/lib/prefs";
 import {
   AREAS,
   type Area,
+  type Alert,
   type DayData,
   DEVICES,
+  type ForecastResult,
   type PricesResult,
   type WindowResult,
 } from "@/lib/types";
@@ -40,10 +42,16 @@ async function loadDay(area: Area, date: string, fromUtc?: string): Promise<DayD
     ),
   ]);
   const hasPrices = !!prices?.data.summary;
+  const [forecast, alerts] = await Promise.all([
+    hasPrices ? null : getPublic<ForecastResult>("/forecast", { area, day: date }),
+    hasPrices ? getPublic<{ data: { alerts: Alert[] } }>("/alerts", { area, day: date }) : null,
+  ]);
   return {
     date,
     prices: hasPrices ? prices : null,
     windows: Object.fromEntries(DEVICES.map((d, i) => [d.minutes, hasPrices ? windows[i] : null])),
+    forecast: forecast && !forecast.published ? forecast : null,
+    alerts: alerts?.data.alerts ?? [],
   };
 }
 

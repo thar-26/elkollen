@@ -554,3 +554,70 @@ def explain_spike(wh: Warehouse, area: str, interval_start_utc: datetime) -> Res
         sources=["marts.fct_prices_15min"],
         notes=[ENERGY_ONLY_NOTE, NO_DRIVER_DATA_NOTE],
     )
+
+
+def alerts(wh: Warehouse, area: str, day: date) -> Result:
+    """Things worth telling someone about one delivery day, each with its numbers:
+    negative quarters, a cheap 2-hour window (below half the 30-day average) and a
+    spike (a quarter above twice the 30-day average)."""
+    check_area(area)
+    rows, truncated = _fetch(
+        wh,
+        """select interval_start_utc, interval_end_utc, price_ore_per_kwh
+           from marts.fct_prices_15min
+           where price_area = :area and delivery_date = :day
+           order by interval_start_utc""",
+        {"area": area, "day": day},
+    )
+    base = wh.fetch(
+        """select avg(price_ore_per_kwh) as avg_30d from marts.fct_prices_15min
+           where price_area = :area and delivery_date >= :since and delivery_date < :day""",
+        {"area": area, "since": day - timedelta(days=30), "day": day},
+    )
+    avg_30d = _num(base[0]["avg_30d"]) if base and base[0]["avg_30d"] is not None else None
+    found: list[dict] = []
+    if rows:
+        negative = [r for r in rows if r["price_ore_per_kwh"] < 0]
+        if negative:
+            found.append(
+                {
+                    "kind": "negative_prices",
+                    "n_quarters": len(negative),
+                    "first_start_utc": negative[0]["interval_start_utc"],
+                    "last_end_utc": negative[-1]["interval_end_utc"],
+                    "lowest_ore_per_kwh": _num(min(r["price_ore_per_kwh"] for r in negative)),
+                }
+            )
+        if avg_30d and avg_30d > 0 and len(rows) >= 8:
+            prices = [float(r["price_ore_per_kwh"]) for r in rows]
+            sums = [sum(prices[i : i + 8]) / 8 for i in range(len(prices) - 7)]
+            best = min(range(len(sums)), key=sums.__getitem__)
+            if sums[best] < 0.5 * avg_30d:
+                found.append(
+                    {
+                        "kind": "cheap_window",
+                        "start_utc": rows[best]["interval_start_utc"],
+                        "end_utc": rows[best + 7]["interval_end_utc"],
+                        "avg_ore_per_kwh": _num(sums[best]),
+                        "avg_30d_ore_per_kwh": avg_30d,
+                    }
+                )
+            peak = max(rows, key=lambda r: r["price_ore_per_kwh"])
+            if peak["price_ore_per_kwh"] > 2 * avg_30d:
+                found.append(
+                    {
+                        "kind": "spike",
+                        "start_utc": peak["interval_start_utc"],
+                        "price_ore_per_kwh": _num(peak["price_ore_per_kwh"]),
+                        "avg_30d_ore_per_kwh": avg_30d,
+                    }
+                )
+    return Result(
+        tool="alerts",
+        inputs={"area": area, "day": day},
+        data={"published": bool(rows), "alerts": found, "avg_30d_ore_per_kwh": avg_30d},
+        rows_read=len(rows) + len(base),
+        truncated=truncated,
+        sources=["marts.fct_prices_15min"],
+        notes=[ENERGY_ONLY_NOTE],
+    )

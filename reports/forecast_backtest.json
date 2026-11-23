@@ -1,0 +1,188 @@
+{
+  "generated_at_utc": "2026-11-23T22:04:27+00:00",
+  "test_days": 60,
+  "test_period": [
+    "2026-09-26",
+    "2026-11-24"
+  ],
+  "history_since": "2024-11-01",
+  "unit": "öre/kWh, mean absolute error",
+  "results": [
+    {
+      "area": "SE1",
+      "method": "same_quarter_yesterday",
+      "mae_ore_per_kwh": 28.32,
+      "gain_pct": 0.0,
+      "days": 60,
+      "days_won": null,
+      "gain_low": null,
+      "gain_high": null,
+      "verdict": "reference"
+    },
+    {
+      "area": "SE1",
+      "method": "ridge",
+      "mae_ore_per_kwh": 23.84,
+      "gain_pct": 15.8,
+      "days": 60,
+      "days_won": 38,
+      "gain_low": 0.95,
+      "gain_high": 8.33,
+      "verdict": "beats baseline"
+    },
+    {
+      "area": "SE1",
+      "method": "blend_yesterday_and_week",
+      "mae_ore_per_kwh": 25.26,
+      "gain_pct": 10.8,
+      "days": 60,
+      "days_won": 35,
+      "gain_low": -0.19,
+      "gain_high": 6.71,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE1",
+      "method": "same_quarter_last_week",
+      "mae_ore_per_kwh": 31.92,
+      "gain_pct": -12.7,
+      "days": 60,
+      "days_won": 27,
+      "gain_low": -10.6,
+      "gain_high": 3.56,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE2",
+      "method": "same_quarter_yesterday",
+      "mae_ore_per_kwh": 32.14,
+      "gain_pct": 0.0,
+      "days": 60,
+      "days_won": null,
+      "gain_low": null,
+      "gain_high": null,
+      "verdict": "reference"
+    },
+    {
+      "area": "SE2",
+      "method": "ridge",
+      "mae_ore_per_kwh": 26.91,
+      "gain_pct": 16.3,
+      "days": 60,
+      "days_won": 33,
+      "gain_low": 1.12,
+      "gain_high": 9.82,
+      "verdict": "beats baseline"
+    },
+    {
+      "area": "SE2",
+      "method": "blend_yesterday_and_week",
+      "mae_ore_per_kwh": 28.78,
+      "gain_pct": 10.4,
+      "days": 60,
+      "days_won": 33,
+      "gain_low": -0.43,
+      "gain_high": 7.51,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE2",
+      "method": "same_quarter_last_week",
+      "mae_ore_per_kwh": 38.15,
+      "gain_pct": -18.7,
+      "days": 60,
+      "days_won": 25,
+      "gain_low": -13.58,
+      "gain_high": 2.01,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE3",
+      "method": "same_quarter_yesterday",
+      "mae_ore_per_kwh": 51.76,
+      "gain_pct": 0.0,
+      "days": 60,
+      "days_won": null,
+      "gain_low": null,
+      "gain_high": null,
+      "verdict": "reference"
+    },
+    {
+      "area": "SE3",
+      "method": "ridge",
+      "mae_ore_per_kwh": 48.11,
+      "gain_pct": 7.1,
+      "days": 60,
+      "days_won": 33,
+      "gain_low": -2.24,
+      "gain_high": 9.2,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE3",
+      "method": "blend_yesterday_and_week",
+      "mae_ore_per_kwh": 50.34,
+      "gain_pct": 2.7,
+      "days": 60,
+      "days_won": 30,
+      "gain_low": -3.79,
+      "gain_high": 6.51,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE3",
+      "method": "same_quarter_last_week",
+      "mae_ore_per_kwh": 69.97,
+      "gain_pct": -35.2,
+      "days": 60,
+      "days_won": 22,
+      "gain_low": -30.79,
+      "gain_high": -6.01,
+      "verdict": "worse"
+    },
+    {
+      "area": "SE4",
+      "method": "same_quarter_yesterday",
+      "mae_ore_per_kwh": 62.7,
+      "gain_pct": 0.0,
+      "days": 60,
+      "days_won": null,
+      "gain_low": null,
+      "gain_high": null,
+      "verdict": "reference"
+    },
+    {
+      "area": "SE4",
+      "method": "blend_yesterday_and_week",
+      "mae_ore_per_kwh": 61.96,
+      "gain_pct": 1.2,
+      "days": 60,
+      "days_won": 32,
+      "gain_low": -5.98,
+      "gain_high": 7.1,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE4",
+      "method": "ridge",
+      "mae_ore_per_kwh": 62.45,
+      "gain_pct": 0.4,
+      "days": 60,
+      "days_won": 30,
+      "gain_low": -7.86,
+      "gain_high": 7.9,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE4",
+      "method": "same_quarter_last_week",
+      "mae_ore_per_kwh": 98.41,
+      "gain_pct": -57.0,
+      "days": 60,
+      "days_won": 23,
+      "gain_low": -54.29,
+      "gain_high": -18.22,
+      "verdict": "worse"
+    }
+  ]
+}
