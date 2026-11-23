@@ -25,8 +25,10 @@ import os
 import time
 from collections import defaultdict, deque
 from datetime import date, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
+import anyio
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -59,6 +61,26 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=1000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=10)
     locale: Literal["sv", "en"] = "sv"
+
+
+def _backtest_for(area: str) -> dict | None:
+    """This area's ridge vs same-quarter-yesterday numbers from the committed report."""
+    path = Path(os.environ.get("ELKOLLEN_BACKTEST_REPORT", "reports/forecast_backtest.json"))
+    if not path.exists():
+        return None
+    report = json.loads(path.read_text(encoding="utf-8"))
+    rows = {r["method"]: r for r in report["results"] if r["area"] == area}
+    if "ridge" not in rows:
+        return None
+    return {
+        "test_period": report["test_period"],
+        "ridge_mae_ore_per_kwh": rows["ridge"]["mae_ore_per_kwh"],
+        "baseline_mae_ore_per_kwh": rows["same_quarter_yesterday"]["mae_ore_per_kwh"],
+        "gain_pct": rows["ridge"]["gain_pct"],
+        "days_won": rows["ridge"]["days_won"],
+        "days": rows["ridge"]["days"],
+        "verdict": rows["ridge"]["verdict"],
+    }
 
 
 def _find_exception(exc: BaseException, kind: type[BaseException]) -> BaseException | None:
@@ -192,6 +214,53 @@ def create_app(
     @app.get("/prices/explain")
     def explain(area: Area, interval_start_utc: datetime) -> dict:
         return queries.explain_spike(wh, area, interval_start_utc).model_dump(mode="json")
+
+    @app.get("/alerts")
+    def alerts(area: Area, day: date) -> dict:
+        return queries.alerts(wh, area, day).model_dump(mode="json")
+
+    forecast_cache: dict[tuple[str, date], tuple[float, dict]] = {}
+
+    @app.get("/forecast")
+    async def forecast(area: Area, day: date) -> dict:
+        """Ridge forecast (ported from elpris-forecast) for a day whose prices are not
+        published yet, with this area's honest backtest numbers attached."""
+        published = queries.get_prices(wh, area, day, day).data["summary"] is not None
+        if published:
+            return {"area": area, "day": day.isoformat(), "published": True, "intervals": []}
+        cached = forecast_cache.get((area, day))
+        if cached and time.monotonic() - cached[0] < 1800:
+            return cached[1]
+
+        def compute() -> dict:
+            from datetime import timedelta
+
+            from elkollen_forecast import model
+
+            prices = model.load_prices(wh, day - timedelta(days=400))
+            out = model.forecast_day(prices, area, day)
+            return {
+                "area": area,
+                "day": day.isoformat(),
+                "published": False,
+                "model": "ridge (ported from thar-26/elpris-forecast)",
+                "unit": "öre/kWh",
+                "intervals": [
+                    {
+                        "start_utc": ts.tz_convert(None).isoformat(),
+                        "forecast_ore_per_kwh": round(v, 2),
+                    }
+                    for ts, v in zip(out["start_utc"], out["forecast_ore"], strict=True)
+                ],
+                "backtest": _backtest_for(area),
+            }
+
+        try:
+            result = await anyio.to_thread.run_sync(compute)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        forecast_cache[(area, day)] = (time.monotonic(), result)
+        return result
 
     # ------------------------------------------------------------ signed-in user
 
