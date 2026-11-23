@@ -47,6 +47,17 @@ DEMO_USERS: tuple[SyntheticUser, ...] = (
     ),
 )
 
+# A user who asked to be deleted. Loaded only on request, to prove that deleted users'
+# rows are hidden from the app (application check and Snowflake row access policy).
+DELETED_DEMO_USER = SyntheticUser(
+    "demo-deleted",
+    "Deleted (demo)",
+    "SE3",
+    "735999000000000303",
+    "Borttagen 3, 111 44 Stockholm",
+    "apartment",
+)
+
 
 def quarter_hours_utc(day: date) -> list[datetime]:
     """UTC starts (naive) of every quarter-hour in the Stockholm local day."""
@@ -82,7 +93,9 @@ def kwh(profile: str, local: datetime, rng: random.Random) -> float:
     return round(load * rng.uniform(0.85, 1.15), 3)  # noqa: S311 - not security related
 
 
-def user_rows(run_id: str, loaded_at: datetime, users=DEMO_USERS) -> list[tuple]:
+def user_rows(
+    run_id: str, loaded_at: datetime, users=DEMO_USERS, status: str = "active"
+) -> list[tuple]:
     created = datetime(2026, 1, 1)  # noqa: DTZ001 - naive UTC by convention in RAW
     return [
         (
@@ -91,7 +104,7 @@ def user_rows(run_id: str, loaded_at: datetime, users=DEMO_USERS) -> list[tuple]
             u.price_area,
             u.meter_id,
             u.address,
-            "active",
+            status,
             True,
             created,
             run_id,
