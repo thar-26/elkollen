@@ -9,15 +9,16 @@ MCP server and an HTTP API. No web UI, chat or forecast yet.
 | Piece | State | Verified by |
 |---|---|---|
 | Price ingestion (elprisetjustnu.se → RAW) | Works | pytest; live runs against the API |
-| dbt staging and the **unified 15-minute model** `fct_prices_15min` | Works on DuckDB; staging also on Snowflake | `dbt build` on real fixture days: interval counts per day (96/92/100) against a DST calendar, gaps, duplicates, all areas, whole missing days, hourly→15-min flag; tests shown to fail on corrupted data |
-| Marts: daily prices, price freshness, per-user consumption | Works on DuckDB | dbt data and unit tests (e.g. a user is only ever priced in their own area) |
+| dbt staging and the **unified 15-minute model** `fct_prices_15min` | Works on DuckDB **and Snowflake** | CI: real fixture days. Snowflake: two years of history (2024-10-26 → tomorrow, 193,936 source rows), `dbt build` 87/87: interval counts per day (96/92/100) against a DST calendar, gaps, duplicates, all areas, no missing day, hourly→15-min flag. Tests shown to fail on corrupted data |
+| Marts: daily prices, price freshness, per-user consumption | Works on DuckDB and Snowflake | dbt data and unit tests (e.g. a user is only ever priced in their own area); the live "tomorrow's prices are in" test passes on Snowflake |
 | Freshness check for tomorrow's prices | Works | `mart_price_freshness` + a `live` test, unit-tested with a pinned clock |
 | Shared query layer (`elkollen_data`) | Works | 35 tests on a warehouse built by dbt |
 | **MCP server** (5 read-only tools) | Works locally | 22 tests through the real MCP HTTP app: 8 kinds of bad token → 401, user A cannot read user B, no tool takes a user |
 | **HTTP API** (FastAPI) | Works locally | 43 tests: bad tokens → 401, user A cannot read user B (also via smuggled query params), deleted users → 403 |
-| Terraform for Snowflake | Applied (phase 1) | 37 objects on a trial account; phase-3 grant change **not applied yet** |
+| Terraform for Snowflake | Applied | 37 objects (phase 1) + policy grants (phase 3) on a trial account; re-plan shows no drift |
 | Least-privilege roles | Works | `RUN_SNOWFLAKE_TESTS=1 pytest tests/snowflake` (opt-in, not in CI) |
-| Masking and row access policies | Written, not run | Need the phase-3 Terraform grant on Snowflake |
+| Masking and row access policies | Works on Snowflake | Live checks: READER sees `****` meter ids and addresses and no deleted user; TRANSFORMER sees full values; policies attached. The query layer gives the same answers on Snowflake as on DuckDB (15/15 live checks) |
+| Cost so far | 0.43 credits | Of the 5-credit monthly cap, including the two-year backfill |
 | Scheduled / Snowflake-native ingestion | Off by default | Not run |
 
 ## Run it locally (no cloud account needed)
@@ -87,8 +88,8 @@ docs/                 data sources and terms, decision records
 
 ## Known limitations
 
-- The phase-3 Snowflake changes (policy grants, per-user marts, policies) are not applied
-  or run on Snowflake yet; everything in phases 2–3 is verified on DuckDB.
+- The API and MCP server have been run against Snowflake only through their shared
+  query layer (live checks); end-to-end HTTP tests run on DuckDB.
 - Per-end-user isolation is enforced and tested in the application, not inside
   Snowflake (one service user for the app); see decision 0003.
 - `explain_spike` infers context from prices only; load, wind and weather data are not
