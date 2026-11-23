@@ -63,6 +63,15 @@ class ChatRequest(BaseModel):
     locale: Literal["sv", "en"] = "sv"
 
 
+class UploadRequest(BaseModel):
+    """A consumption export as text. No user field; nothing is stored."""
+
+    model_config = ConfigDict(extra="forbid")
+    area: Area
+    csv: str = Field(min_length=10, max_length=5_000_000)
+    flexible_share: float = Field(default=0.3, ge=0, le=1)
+
+
 def _backtest_for(area: str) -> dict | None:
     """This area's ridge vs same-quarter-yesterday numbers from the committed report."""
     path = Path(os.environ.get("ELKOLLEN_BACKTEST_REPORT", "reports/forecast_backtest.json"))
@@ -218,6 +227,15 @@ def create_app(
     @app.get("/alerts")
     def alerts(area: Area, day: date) -> dict:
         return queries.alerts(wh, area, day).model_dump(mode="json")
+
+    @app.post("/consumption/analyse")
+    def analyse_consumption(body: UploadRequest) -> dict:
+        """Analyse an uploaded consumption export in memory. Nothing is stored or logged."""
+        from elkollen_data import upload
+
+        return upload.analyse(
+            wh, body.area, body.csv.encode("utf-8"), body.flexible_share
+        ).model_dump(mode="json")
 
     forecast_cache: dict[tuple[str, date], tuple[float, dict]] = {}
 
