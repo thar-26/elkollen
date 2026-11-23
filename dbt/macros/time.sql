@@ -47,3 +47,38 @@
          else 0
        end)
 {%- endmacro %}
+
+
+{#- Current wall-clock time in Sweden as a timestamp without zone. Pin it with
+    var('as_of_stockholm', 'YYYY-MM-DD HH:MI:SS') for unit tests and replays. -#}
+{% macro stockholm_now() -%}
+    {%- set pinned = var('as_of_stockholm', none) -%}
+    {%- if pinned -%}
+        cast('{{ pinned }}' as timestamp)
+    {%- else -%}
+        {{ return(adapter.dispatch('stockholm_now', 'elkollen')()) }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro default__stockholm_now() -%}
+    cast(timezone('Europe/Stockholm', now()) as timestamp)
+{%- endmacro %}
+
+{% macro snowflake__stockholm_now() -%}
+    convert_timezone('Europe/Stockholm', current_timestamp())::timestamp_ntz
+{%- endmacro %}
+
+
+{#- Integers 0..9999 in plain SQL (no engine-specific generator): enough for a
+    27-year day spine. -#}
+{% macro numbers_0_to_9999() -%}
+    (
+        with digits as (
+            select 0 as d union all select 1 union all select 2 union all select 3
+            union all select 4 union all select 5 union all select 6 union all select 7
+            union all select 8 union all select 9
+        )
+        select a.d + 10 * b.d + 100 * c.d + 1000 * e.d as n
+        from digits a cross join digits b cross join digits c cross join digits e
+    )
+{%- endmacro %}

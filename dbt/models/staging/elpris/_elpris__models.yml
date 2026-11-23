@@ -21,6 +21,10 @@ models:
             start_column: interval_start_utc
             end_column: interval_end_utc
             date_column: delivery_date
+      - all_areas_present_per_day:
+          arguments:
+            date_column: delivery_date
+            area_column: price_area
       - expression_is_true:
           name: stg_elpris__prices_price_within_market_limits
           arguments:

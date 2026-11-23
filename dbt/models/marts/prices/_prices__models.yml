@@ -1,0 +1,169 @@
+version: 2
+
+models:
+  - name: fct_prices_15min
+    description: >
+      The unified time grain. One row per price area and 15-minute interval across the
+      whole history. Hourly rows (before 2025-10-01) are expanded to four quarters with
+      the hourly price and is_upsampled_from_hourly = true. A day has 96 intervals, 92 on
+      the spring clock-change day and 100 on the autumn one. Negative prices are real.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, interval_start_utc]
+      - expected_intervals_per_day:
+          arguments:
+            partition_by: price_area
+            date_column: delivery_date
+            interval_minutes_column: interval_minutes
+      - contiguous_intervals:
+          arguments:
+            partition_by: price_area
+            start_column: interval_start_utc
+            end_column: interval_end_utc
+            date_column: delivery_date
+      - all_areas_present_per_day:
+          arguments:
+            date_column: delivery_date
+            area_column: price_area
+      - no_missing_days:
+          arguments:
+            date_column: delivery_date
+            partition_by: price_area
+            start_date: "{{ var('price_continuity_start', none) }}"
+            end_date: "{{ var('price_continuity_end', none) }}"
+      - expression_is_true:
+          name: fct_prices_15min_flag_matches_source_resolution
+          arguments:
+            expression: >
+              (is_upsampled_from_hourly and source_resolution = 'PT60M')
+              or (not is_upsampled_from_hourly and source_resolution = 'PT15M')
+      - expression_is_true:
+          name: fct_prices_15min_hourly_era_ends_2025_09_30
+          arguments:
+            # Day-ahead moved to 15-minute resolution on delivery day 2025-10-01.
+            expression: >
+              (delivery_date < cast('2025-10-01' as date) and is_upsampled_from_hourly)
+              or (delivery_date >= cast('2025-10-01' as date) and not is_upsampled_from_hourly)
+      - expression_is_true:
+          name: fct_prices_15min_price_within_market_limits
+          arguments:
+            expression: >
+              price_eur_per_kwh between {{ var('price_eur_per_kwh_min') }}
+              and {{ var('price_eur_per_kwh_max') }}
+    columns:
+      - name: price_area
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_price_areas')
+                field: price_area
+      - name: delivery_date
+        description: Local (Europe/Stockholm) delivery day.
+        data_tests: [not_null]
+      - name: interval_start_utc
+        description: Interval start, UTC. The join key.
+        data_tests: [not_null]
+      - name: interval_end_utc
+        data_tests: [not_null]
+      - name: interval_start_local
+        description: Wall-clock start in Sweden. Repeats on the autumn clock-change day.
+        data_tests: [not_null]
+      - name: interval_of_day
+        description: 1-based position within the local day (1..92, 96 or 100).
+        data_tests: [not_null]
+      - name: interval_minutes
+        description: Always 15 in this table.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [15]
+                quote: false
+      - name: price_ore_per_kwh
+        description: Spot price in öre/kWh, excl. VAT, tax, certificates and grid fees.
+        data_tests: [not_null]
+      - name: is_upsampled_from_hourly
+        description: True if the source price was hourly and this row is one quarter of it.
+        data_tests: [not_null]
+
+  - name: fct_daily_prices
+    description: One row per price area and delivery day with summary prices in öre/kWh.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, delivery_date]
+      - expression_is_true:
+          name: fct_daily_prices_min_avg_max_ordered
+          arguments:
+            expression: min_ore_per_kwh <= avg_ore_per_kwh and avg_ore_per_kwh <= max_ore_per_kwh
+      - expression_is_true:
+          name: fct_daily_prices_interval_count_is_valid
+          arguments:
+            expression: n_intervals in (92, 96, 100)
+    columns:
+      - name: cheapest_interval_start_utc
+        data_tests: [not_null]
+      - name: dearest_interval_start_utc
+        data_tests: [not_null]
+
+  - name: mart_price_freshness
+    description: >
+      Per price area: the latest delivery day loaded and whether tomorrow's prices are in.
+      The live test below fails when it is past var('tomorrow_expected_after_hour')
+      Stockholm time and tomorrow is still missing. It is tagged `live` because it is
+      about the real clock; CI runs on fixture days and excludes it.
+    data_tests:
+      - expression_is_true:
+          name: tomorrow_prices_published_when_expected
+          config:
+            tags: [live]
+          arguments:
+            expression: not tomorrow_expected or has_tomorrow
+    columns:
+      - name: price_area
+        data_tests: [unique, not_null]
+
+unit_tests:
+  - name: test_int_prices__15min_hourly_row_becomes_four_quarters
+    model: int_prices__15min
+    given:
+      - input: ref('stg_elpris__prices')
+        rows:
+          - { price_area: SE3, delivery_date: 2025-09-30, interval_start_utc: "2025-09-30 10:00:00", interval_end_utc: "2025-09-30 11:00:00", interval_start_local: "2025-09-30 12:00:00", utc_offset_minutes: 120, interval_minutes: 60, source_resolution: PT60M, price_sek_per_kwh: -0.02, price_ore_per_kwh: -2.0, price_eur_per_kwh: -0.0018, eur_sek_rate: 11.0, has_source_end_mismatch: false, loaded_at: "2026-01-01 00:00:00" }
+          - { price_area: SE3, delivery_date: 2025-10-01, interval_start_utc: "2025-10-01 10:00:00", interval_end_utc: "2025-10-01 10:15:00", interval_start_local: "2025-10-01 12:00:00", utc_offset_minutes: 120, interval_minutes: 15, source_resolution: PT15M, price_sek_per_kwh: 0.5, price_ore_per_kwh: 50.0, price_eur_per_kwh: 0.045, eur_sek_rate: 11.0, has_source_end_mismatch: false, loaded_at: "2026-01-01 00:00:00" }
+    expect:
+      rows:
+        - { interval_start_utc: "2025-09-30 10:00:00", interval_end_utc: "2025-09-30 10:15:00", interval_start_local: "2025-09-30 12:00:00", price_ore_per_kwh: -2.0, is_upsampled_from_hourly: true }
+        - { interval_start_utc: "2025-09-30 10:15:00", interval_end_utc: "2025-09-30 10:30:00", interval_start_local: "2025-09-30 12:15:00", price_ore_per_kwh: -2.0, is_upsampled_from_hourly: true }
+        - { interval_start_utc: "2025-09-30 10:30:00", interval_end_utc: "2025-09-30 10:45:00", interval_start_local: "2025-09-30 12:30:00", price_ore_per_kwh: -2.0, is_upsampled_from_hourly: true }
+        - { interval_start_utc: "2025-09-30 10:45:00", interval_end_utc: "2025-09-30 11:00:00", interval_start_local: "2025-09-30 12:45:00", price_ore_per_kwh: -2.0, is_upsampled_from_hourly: true }
+        - { interval_start_utc: "2025-10-01 10:00:00", interval_end_utc: "2025-10-01 10:15:00", interval_start_local: "2025-10-01 12:00:00", price_ore_per_kwh: 50.0, is_upsampled_from_hourly: false }
+
+  - name: test_mart_price_freshness_flags_missing_tomorrow_after_14
+    model: mart_price_freshness
+    overrides:
+      vars:
+        as_of_stockholm: "2026-11-23 15:30:00"
+    given:
+      - input: ref('fct_prices_15min')
+        rows:
+          - { price_area: SE3, delivery_date: 2026-11-23, loaded_at: "2026-11-22 12:30:00" }
+          - { price_area: SE4, delivery_date: 2026-11-24, loaded_at: "2026-11-23 12:30:00" }
+    expect:
+      rows:
+        - { price_area: SE3, has_today: true, has_tomorrow: false, tomorrow_expected: true }
+        - { price_area: SE4, has_today: true, has_tomorrow: true, tomorrow_expected: true }
+
+  - name: test_mart_price_freshness_before_publication_is_not_late
+    model: mart_price_freshness
+    overrides:
+      vars:
+        as_of_stockholm: "2026-11-23 09:00:00"
+    given:
+      - input: ref('fct_prices_15min')
+        rows:
+          - { price_area: SE3, delivery_date: 2026-11-23, loaded_at: "2026-11-22 12:30:00" }
+    expect:
+      rows:
+        - { price_area: SE3, has_tomorrow: false, tomorrow_expected: false }
