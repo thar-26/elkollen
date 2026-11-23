@@ -43,7 +43,13 @@ jobs:
       - name: Load fixtures into RAW (offline, no network)
         run: elkollen-ingest load-fixtures fixtures/elpris
       - name: dbt build (models, data tests, unit tests)
-        run: dbt build --project-dir dbt --profiles-dir dbt
+        # Fixtures are separate windows of real days, so the "no missing days" check
+        # runs on the contiguous window 2025-09-29..2025-10-05 (the hourly -> 15-minute
+        # switch). Tests tagged `live` are about the real clock (is tomorrow's price
+        # in?) and run in the scheduled Snowflake workflow, not on fixtures.
+        run: >
+          dbt build --project-dir dbt --profiles-dir dbt --exclude tag:live
+          --vars '{price_continuity_start: "2025-09-29", price_continuity_end: "2025-10-05"}'
       - name: dbt docs generate
         run: dbt docs generate --project-dir dbt --profiles-dir dbt
 
