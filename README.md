@@ -12,6 +12,15 @@ An electricity assistant for Sweden built on 15-minute day-ahead prices.
 | Terraform for Snowflake | Validates | `terraform validate` against the provider schema. **Not applied** — needs your account |
 | Snowflake sink and `snowflake` dbt target | Written, not run | Unit test with a fake connection only |
 | Scheduled ingestion (GitHub Actions) | Off by default | Not run |
+| Snowflake-native ingestion (procedure + task) | Off by default (`enable_native_ingestion`) | Procedure code tested with a fake Snowpark session, including the exact body Terraform ships; Terraform validates. Not run on Snowflake |
+
+### Hybrid ingestion
+
+Fetching and transforming are split ([decision 0002](docs/decisions/0002-hybrid-ingestion.md)).
+On a Snowflake trial, which cannot call outside APIs, a scheduled GitHub workflow
+fetches prices and loads them as the LOADER user. On a paid account, one Terraform
+variable moves fetching into Snowflake: a task calls a Python procedure that may only
+reach the price API. dbt then builds and tests the models in Snowflake either way.
 
 ## Run it locally (no cloud account needed)
 
@@ -56,6 +65,7 @@ docs/                data sources and terms, decision records
 ## Known limitations (phase 1)
 
 - Snowflake resources and the Snowflake code paths have not been run against a real account.
+- Native ingestion uses provider resources marked "preview"; their schema may change.
 - ENTSO-E and SMHI terms are not verified yet; those sources are not used.
 - No unified 15-minute model, marts, API, MCP server, UI or forecast yet (phases 2–5).
 - Missing *whole days* are not detected yet; a date-spine test comes with the marts.
