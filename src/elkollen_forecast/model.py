@@ -185,12 +185,38 @@ def compare_methods(predictions: pd.DataFrame, resamples: int = 5000) -> list[di
     return sorted(rows, key=lambda r: (r["area"], r["method"] != REFERENCE, r["mae_ore_per_kwh"]))
 
 
-def forecast_day(prices: pd.DataFrame, area: str, day: date) -> pd.DataFrame:
+def forecast_day(
+    prices: pd.DataFrame, area: str, day: date, grid: pd.DataFrame | None = None
+) -> pd.DataFrame:
     """Ridge forecast for every quarter of local `day` in `area`, trained on all known
     history. Needs prices up to the end of the day before `day`.
 
+    With `grid`, the grid-aware model is used if every quarter of `day` has a grid
+    forecast; otherwise prices only. `out.attrs["method"]` says which, so the caller can
+    show the backtest of the model that was actually used.
+
     Columns: start_utc, forecast_ore.
     """
+    out = _forecast_day_prices_only(prices, area, day)
+    if grid is None or grid.empty:
+        return out
+    rows = prices[prices["area"] == area]
+    known = rows[rows["start_utc"] < out["start_utc"].min()]
+    features = build_features(known, until=out["start_utc"].max(), grid=grid[grid["area"] == area])
+    train = features.dropna(subset=["actual"])
+    target = features[features["start_utc"].isin(out["start_utc"])]
+    if len(target) != len(out) or len(train) < MIN_TRAINING_DAYS * Q_DAY:
+        return out  # no complete grid forecast for the day yet
+    both = FEATURES + GRID_FEATURES
+    fitted = Ridge(alpha=1.0).fit(train[both], train["actual"])
+    result = pd.DataFrame(
+        {"start_utc": target["start_utc"].to_numpy(), "forecast_ore": fitted.predict(target[both])}
+    )
+    result.attrs["method"] = "ridge_with_grid_forecasts"
+    return result
+
+
+def _forecast_day_prices_only(prices: pd.DataFrame, area: str, day: date) -> pd.DataFrame:
     rows = prices[prices["area"] == area]
     # Local midnight to local midnight: 96 quarters, or 92/100 on clock-change days.
     start = pd.Timestamp(day.isoformat()).tz_localize(LOCAL_TZ).tz_convert("UTC")
@@ -206,12 +232,14 @@ def forecast_day(prices: pd.DataFrame, area: str, day: date) -> pd.DataFrame:
     if len(train) < MIN_TRAINING_DAYS * Q_DAY or target.empty:
         raise ValueError("not enough history to forecast")
     model = Ridge(alpha=1.0).fit(train[FEATURES], train["actual"])
-    return pd.DataFrame(
+    out = pd.DataFrame(
         {
             "start_utc": target["start_utc"].to_numpy(),
             "forecast_ore": model.predict(target[FEATURES]),
         }
     )
+    out.attrs["method"] = "ridge"
+    return out
 
 
 def load_grid(wh, since: date) -> pd.DataFrame:
