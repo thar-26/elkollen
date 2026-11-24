@@ -1,3 +1,4 @@
+# ruff: noqa: DTZ001 - the warehouse stores naive UTC, so tests compare naive UTC
 from datetime import UTC, date, datetime
 
 import pytest

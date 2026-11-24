@@ -35,15 +35,26 @@ FEATURES = [
     "quarter",  # quarter of the local day, 0..95
     "weekend",  # 1 on Saturday and Sunday
 ]
+# Optional: ENTSO-E day-ahead forecasts for the quarter itself (MW). They are forecasts
+# made the day before, so using them for the same quarter is not a look-ahead. Caveat:
+# the rules let wind and solar forecasts be published as late as 18:00 the day before,
+# after prices (about 13:00), so in practice they may not exist yet at forecast time.
+GRID_FEATURES = ["load_mw", "wind_mw", "solar_mw"]
 
 
-def build_features(prices: pd.DataFrame, until: pd.Timestamp | None = None) -> pd.DataFrame:
+def build_features(
+    prices: pd.DataFrame,
+    until: pd.Timestamp | None = None,
+    grid: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     """One row per area and quarter with the actual price and inputs that are all at
     least 24 hours old.
 
     Input columns: area, start_utc (tz-aware UTC), ore.
     Output columns: area, start_utc, local_date, actual, *FEATURES.
     `until` adds future quarters (actual empty) built by the same code as training rows.
+    `grid` (area, start_utc, *GRID_FEATURES) adds those columns; quarters without a
+    complete grid forecast are dropped so both models are scored on the same rows.
     """
     frames = []
     for area, group in prices.groupby("area"):
@@ -64,6 +75,9 @@ def build_features(prices: pd.DataFrame, until: pd.Timestamp | None = None) -> p
         frame["weekend"] = (local.dayofweek >= 5).astype(int)
         frame["local_date"] = local.date
         frame["area"] = area
+        if grid is not None:
+            g = grid[grid["area"] == area].set_index("start_utc")[GRID_FEATURES]
+            frame = frame.join(g.astype(float))
         if until is not None:
             # On the autumn clock-change day (25 hours) the last hour's "same quarter
             # yesterday" lies inside the day being forecast, so it is not known yet.
@@ -72,10 +86,11 @@ def build_features(prices: pd.DataFrame, until: pd.Timestamp | None = None) -> p
         frame.index.name = "start_utc"
         frames.append(frame.reset_index())
 
-    columns = ["area", "start_utc", "local_date", "actual", *FEATURES]
+    inputs = FEATURES + (GRID_FEATURES if grid is not None else [])
+    columns = ["area", "start_utc", "local_date", "actual", *inputs]
     if not frames:
         return pd.DataFrame(columns=columns)
-    out = pd.concat(frames, ignore_index=True)[columns].dropna(subset=FEATURES)
+    out = pd.concat(frames, ignore_index=True)[columns].dropna(subset=inputs)
     if until is None:
         out = out.dropna(subset=["actual"])
     return out.reset_index(drop=True)
@@ -91,6 +106,7 @@ def walk_forward(features: pd.DataFrame, test_days: int = 60) -> pd.DataFrame:
         raise ValueError(
             f"need at least {test_days + MIN_TRAINING_DAYS} usable days, have {len(days)}"
         )
+    with_grid = all(c in features.columns for c in GRID_FEATURES)
     pieces = []
     for _area, rows in features.groupby("area"):
         for day in days[-test_days:]:
@@ -107,6 +123,10 @@ def walk_forward(features: pd.DataFrame, test_days: int = 60) -> pd.DataFrame:
                 ).to_numpy(),
                 "ridge": model.predict(test[FEATURES]),
             }
+            if with_grid:
+                both = FEATURES + GRID_FEATURES
+                grid_model = Ridge(alpha=1.0).fit(train[both], train["actual"])
+                forecasts["ridge_with_grid_forecasts"] = grid_model.predict(test[both])
             for method, values in forecasts.items():
                 piece = test[["area", "start_utc", "local_date", "actual"]].copy()
                 piece["method"] = method
@@ -192,6 +212,18 @@ def forecast_day(prices: pd.DataFrame, area: str, day: date) -> pd.DataFrame:
             "forecast_ore": model.predict(target[FEATURES]),
         }
     )
+
+
+def load_grid(wh, since: date) -> pd.DataFrame:
+    """ENTSO-E day-ahead load, wind and solar forecasts (MW) since `since`."""
+    rows = wh.fetch(
+        "select price_area as area, interval_start_utc as start_utc, load_mw, wind_mw, solar_mw "
+        "from marts.fct_grid_forecast_15min where delivery_date >= :since order by 1, 2",
+        {"since": since},
+    )
+    frame = pd.DataFrame(rows, columns=["area", "start_utc", *GRID_FEATURES])
+    frame["start_utc"] = pd.to_datetime(frame["start_utc"]).dt.tz_localize("UTC")
+    return frame
 
 
 def load_prices(wh, since: date) -> pd.DataFrame:

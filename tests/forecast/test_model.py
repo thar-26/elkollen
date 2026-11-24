@@ -66,6 +66,43 @@ def test_walk_forward_and_verdicts():
     assert by_method["ridge"]["verdict"] in {"beats baseline", "not proven", "worse"}
 
 
+def test_grid_forecasts_help_when_price_follows_wind():
+    """Price = daily shape - 0.02 öre per MW of (random, day-to-day) wind. Only the
+    model that sees the wind forecast for the quarter can know today's wind."""
+    prices = synthetic(50, noise=0.5)
+    rng = np.random.default_rng(7)
+    wind = np.repeat(rng.uniform(0, 3000, 50), 96)  # a new wind level every day
+    prices["ore"] = prices["ore"] - 0.02 * wind
+    grid = pd.DataFrame(
+        {
+            "area": "SE3",
+            "start_utc": prices["start_utc"],
+            "load_mw": 10_000.0,
+            "wind_mw": wind,
+            "solar_mw": 0.0,
+        }
+    )
+    features = model.build_features(prices, grid=grid)
+    assert set(model.GRID_FEATURES) <= set(features.columns)
+    by_method = {r["method"]: r for r in model.compare_methods(model.walk_forward(features, 15))}
+    assert by_method["ridge_with_grid_forecasts"]["verdict"] == "beats baseline"
+    assert (
+        by_method["ridge_with_grid_forecasts"]["mae_ore_per_kwh"]
+        < by_method["ridge"]["mae_ore_per_kwh"]
+    )
+
+
+def test_quarters_without_grid_forecasts_are_dropped():
+    prices = synthetic(20)
+    grid = pd.DataFrame(
+        {"area": "SE3", "start_utc": prices["start_utc"], "load_mw": 1.0, "wind_mw": 1.0}
+    ).assign(solar_mw=1.0)
+    grid = grid[grid["start_utc"].dt.day != 15]  # one day has no grid forecast
+    features = model.build_features(prices, grid=grid)
+    assert not (pd.to_datetime(features["start_utc"]).dt.day == 15).any()
+    assert not model.build_features(prices).empty
+
+
 @pytest.mark.parametrize(
     ("low", "high", "expected"),
     [(0.5, 2.0, "beats baseline"), (-1.0, 1.0, "not proven"), (-2.0, -0.5, "worse")],
