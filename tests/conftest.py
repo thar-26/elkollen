@@ -31,6 +31,7 @@ def warehouse_path(tmp_path_factory) -> Path:
     os.environ["DBT_TARGET"] = "local"
     try:
         assert ingest(["load-fixtures", str(ROOT / "fixtures" / "elpris")]) == 0
+        assert ingest(["load-entsoe-fixtures", str(ROOT / "fixtures" / "entsoe")]) == 0
         for start, end in (("2025-09-29", "2025-10-05"), ("2025-10-25", "2025-10-27")):
             assert ingest(["synthetic-consumption", "--start", start, "--end", end]) == 0
 

@@ -1,0 +1,44 @@
+version: 2
+
+models:
+  - name: stg_entsoe__forecasts
+    description: >
+      ENTSO-E day-ahead forecasts per area and series at their native resolution,
+      deduplicated to the latest load. Every day must have the clock's number of
+      intervals (96/92/100 quarters or 24/23/25 hours) with no gaps.
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, series, interval_start_utc]
+      - expected_intervals_per_day:
+          arguments:
+            partition_by: "price_area || '/' || series"
+            date_column: delivery_date
+            interval_minutes_column: interval_minutes
+      - contiguous_intervals:
+          arguments:
+            partition_by: "price_area || '/' || series"
+            start_column: interval_start_utc
+            end_column: interval_end_utc
+            date_column: delivery_date
+    columns:
+      - name: price_area
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [SE1, SE2, SE3, SE4]
+      - name: series
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  [load_forecast, wind_onshore_forecast, wind_offshore_forecast, solar_forecast]
+      - name: interval_minutes
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [15, 60]
+      - name: mw
+        data_tests:
+          - not_null

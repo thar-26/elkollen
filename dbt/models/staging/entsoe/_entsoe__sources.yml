@@ -1,0 +1,33 @@
+version: 2
+
+sources:
+  - name: entsoe
+    description: >
+      Day-ahead load, wind and solar forecasts from the ENTSO-E Transparency Platform
+      (data published by the Swedish TSO). Loaded append-only by `elkollen-ingest entsoe`.
+      These are forecasts made the day before, not measurements.
+      See docs/data-sources.md for terms and quirks.
+    schema: raw
+    tables:
+      - name: entsoe_forecasts
+        description: One row per series and interval per load, at the source's resolution.
+        columns:
+          - name: area
+            description: Bidding zone SE1-SE4.
+          - name: series
+            description: >
+              load_forecast, wind_onshore_forecast, wind_offshore_forecast or solar_forecast.
+          - name: delivery_date
+            description: Local (Europe/Stockholm) day of the interval start, set at ingestion.
+          - name: interval_start_utc
+          - name: interval_start_local
+          - name: resolution_minutes
+            description: 15 or 60 (the Swedish load forecast was hourly until late 2025).
+          - name: mw
+            description: >
+              Average power over the interval, MW. Values the API leaves out because they
+              repeat the previous one are filled at ingestion.
+          - name: document_type
+            description: A65 (load) or A69 (wind and solar).
+          - name: ingest_run_id
+          - name: loaded_at
