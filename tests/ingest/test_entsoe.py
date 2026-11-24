@@ -162,6 +162,33 @@ def test_too_long_or_unknown_requests_are_refused():
             c.fetch("NO1", date(2026, 1, 1), date(2026, 1, 1))
 
 
+def test_cli_never_logs_the_token(monkeypatch, tmp_path, caplog):
+    import logging
+
+    from elkollen_ingest import cli
+
+    monkeypatch.setenv("ENTSOE_API_TOKEN", SECRET)
+    monkeypatch.setenv("DUCKDB_PATH", str(tmp_path / "t.duckdb"))
+    monkeypatch.setattr("elkollen_ingest.entsoe.time.sleep", lambda s: None)
+    real_client = httpx.Client
+
+    def answer(request):
+        name = "load" if request.url.params["documentType"] == "A65" else "generation"
+        return httpx.Response(200, text=(FIXTURES / f"SE3_{name}_2025-10-01.xml").read_text())
+
+    monkeypatch.setattr(
+        "elkollen_ingest.entsoe.httpx.Client",
+        lambda **kw: real_client(transport=httpx.MockTransport(answer), **kw),
+    )
+    with caplog.at_level(logging.DEBUG):
+        code = cli.main(
+            ["entsoe", "--start", "2025-10-01", "--end", "2025-10-01", "--areas", "SE3"]
+        )
+    assert code == 0
+    assert "wrote 288 ENTSO-E rows" in caplog.text
+    assert SECRET not in caplog.text
+
+
 def test_missing_token_is_a_clear_error():
     with pytest.raises(EntsoeError, match="ENTSOE_API_TOKEN"):
         EntsoeClient("")

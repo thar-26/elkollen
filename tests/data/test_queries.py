@@ -87,10 +87,7 @@ def test_cheapest_window_respects_earliest_start(warehouse):
     later = datetime(2025, 10, 4, 15, 0)
     r = queries.cheapest_window(warehouse, "SE4", day, 60, earliest_start_utc=later)
     assert r.data["cheapest"]["start_utc"] >= later
-    assert (
-        r.data["cheapest"]["avg_ore_per_kwh"]
-        >= unrestricted.data["cheapest"]["avg_ore_per_kwh"]
-    )
+    assert r.data["cheapest"]["avg_ore_per_kwh"] >= unrestricted.data["cheapest"]["avg_ore_per_kwh"]
 
 
 @pytest.mark.parametrize("minutes", [0, 10, 20, 735, -15])

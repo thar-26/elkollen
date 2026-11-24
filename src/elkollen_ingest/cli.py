@@ -279,6 +279,8 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # httpx logs every request URL at INFO; ENTSO-E URLs carry the security token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     args = build_parser().parse_args(argv)
     return args.func(args)
 
