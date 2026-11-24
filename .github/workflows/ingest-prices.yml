@@ -33,6 +33,7 @@ jobs:
       ELKOLLEN_SF_LOADER_USER: ${{ secrets.ELKOLLEN_SF_LOADER_USER }}
       ELKOLLEN_SF_TRANSFORMER_USER: ${{ secrets.ELKOLLEN_SF_TRANSFORMER_USER }}
       ELKOLLEN_USER_AGENT: elkollen/0.1 (+https://github.com/${{ github.repository }})
+      ENTSOE_API_TOKEN: ${{ secrets.ENTSOE_API_TOKEN }}
       DBT_TARGET: snowflake
     steps:
       - uses: actions/checkout@v7
@@ -54,5 +55,13 @@ jobs:
       - name: Fetch prices into RAW (skipped when Snowflake fetches natively)
         if: vars.SNOWFLAKE_NATIVE_INGESTION != 'true'
         run: elkollen-ingest prices --sink snowflake
-      - run: dbt build --project-dir dbt --profiles-dir dbt --select source:elpris+
+      # ENTSO-E day-ahead load, wind and solar forecasts, yesterday to the day after
+      # tomorrow (late revisions and early forecasts). Skipped without the token secret.
+      - name: Fetch ENTSO-E grid forecasts into RAW
+        if: env.ENTSOE_API_TOKEN != ''
+        run: |
+          elkollen-ingest entsoe --sink snowflake \
+            --start "$(TZ=Europe/Stockholm date -d yesterday +%F)" \
+            --end "$(TZ=Europe/Stockholm date -d '+2 days' +%F)"
+      - run: dbt build --project-dir dbt --profiles-dir dbt --select source:elpris+ source:entsoe+
       - run: dbt source freshness --project-dir dbt --profiles-dir dbt
