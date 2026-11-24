@@ -36,7 +36,7 @@ def test_forecast_refuses_without_enough_history(client):
     assert r.status_code == 422
 
 
-@pytest.mark.parametrize("with_grid", [True, False])
+@pytest.mark.parametrize("with_grid", [True, False, None])  # None: mart missing
 def test_forecast_shows_the_backtest_of_the_model_it_used(warehouse, monkeypatch, with_grid):
     """Synthetic history in place of the warehouse readers, so a forecast succeeds."""
     import numpy as np
@@ -53,7 +53,13 @@ def test_forecast_shows_the_backtest_of_the_model_it_used(warehouse, monkeypatch
         {"area": "SE3", "start_utc": grid_idx, "load_mw": 1e4, "wind_mw": 900.0, "solar_mw": 0.0}
     )
     monkeypatch.setattr(model, "load_prices", lambda wh, since: prices)
-    monkeypatch.setattr(model, "load_grid", lambda wh, since: grid if with_grid else grid.iloc[0:0])
+
+    def load_grid(wh, since):
+        if with_grid is None:
+            raise RuntimeError("table marts.fct_grid_forecast_15min does not exist")
+        return grid if with_grid else grid.iloc[0:0]
+
+    monkeypatch.setattr(model, "load_grid", load_grid)
     body = (
         TestClient(create_app(warehouse, SECRET))
         .get("/forecast", params={"area": "SE3", "day": "2026-02-15"})

@@ -259,7 +259,14 @@ def create_app(
 
             since = day - timedelta(days=400)
             prices = model.load_prices(wh, since)
-            out = model.forecast_day(prices, area, day, grid=model.load_grid(wh, since))
+            try:
+                grid = model.load_grid(wh, since)
+            except Exception as exc:  # e.g. the grid mart is not built in this warehouse yet
+                logging.getLogger("elkollen.api").warning(
+                    "grid forecasts unavailable, using prices only: %s", type(exc).__name__
+                )
+                grid = None
+            out = model.forecast_day(prices, area, day, grid=grid)
             method = out.attrs.get("method", "ridge")
             return {
                 "area": area,
