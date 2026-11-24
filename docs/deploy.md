@@ -1,5 +1,8 @@
 # Deploying the public demo
 
+Live since 2026-11-24: web app https://elkollen-rose.vercel.app, backend
+https://elkollen-api.onrender.com (`/health`).
+
 The demo runs on three free services plus Snowflake:
 
 | Piece | Where | Cost |

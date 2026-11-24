@@ -7,6 +7,9 @@ now and later today, finds the cheapest time to run the dishwasher or charge a c
 forecasts tomorrow before the prices are out, and answers questions in plain language
 without making numbers up.
 
+**Live demo: [elkollen-rose.vercel.app](https://elkollen-rose.vercel.app)** (try the assistant
+with the demo login; all users there are invented).
+
 > Portfolio project. Everything below is either tested or marked as not verified. Details: [docs/how-it-works.md](docs/how-it-works.md).
 
 ## What you can do
@@ -126,10 +129,10 @@ listed in [.env.example](.env.example).
 
 ## Not done or not verified
 
-- **Not deployed yet.** Planned: web app on Vercel, API and MCP server on Render, data in
-  Snowflake (moving to DuckDB before the Snowflake trial ends in December). Steps:
-  [docs/deploy.md](docs/deploy.md). The backend image has not been built yet (no Docker on
-  the development PC); its start script was run and checked locally.
+- **The demo runs on free plans:** the backend sleeps after 15 minutes without visitors, so
+  the first visit after that waits about a minute. Data is in a Snowflake trial that ends in
+  December; the demo moves to DuckDB or a paid plan before then. How it is deployed:
+  [docs/deploy.md](docs/deploy.md).
 - The SE4 forecast gain is not proven. Wind and solar forecasts may be published after the
   prices, so the forecast test may be a little optimistic.
 - ENTSO-E's licence wording is not verified, so no real ENTSO-E data is committed.
