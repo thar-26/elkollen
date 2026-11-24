@@ -131,8 +131,9 @@ listed in [.env.example](.env.example).
 - The SE4 forecast gain is not proven. Wind and solar forecasts may be published after the
   prices, so the forecast test may be a little optimistic.
 - ENTSO-E's licence wording is not verified, so no real ENTSO-E data is committed.
-- More: [docs/how-it-works.md](docs/how-it-works.md) and
-  [docs/data-sources.md](docs/data-sources.md).
+- More: [docs/how-it-works.md](docs/how-it-works.md),
+  [docs/data-sources.md](docs/data-sources.md) and a 5-minute
+  [demo script](docs/demo-script.md).
 
 ## Credits
 
