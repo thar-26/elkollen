@@ -14,7 +14,7 @@ __pycache__/
 .ruff_cache/
 
 # local data (never commit real meter data; DuckDB files are rebuilt from fixtures)
-data/
+/data/
 *.duckdb
 *.duckdb.wal
 

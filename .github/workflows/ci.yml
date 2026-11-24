@@ -43,6 +43,8 @@ jobs:
       - run: pip install -c requirements-lock.txt -e ".[dbt]"
       - name: Load fixtures into RAW (offline, no network)
         run: elkollen-ingest load-fixtures fixtures/elpris
+      - name: Load invented ENTSO-E forecasts (real format, invented values)
+        run: elkollen-ingest load-entsoe-fixtures fixtures/entsoe
       - name: Synthetic demo users (no real meter data)
         run: elkollen-ingest synthetic-consumption --start 2025-09-29 --end 2025-10-05
       - name: dbt build (models, data tests, unit tests)

@@ -1,0 +1,32 @@
+version: 2
+
+models:
+  - name: fct_grid_forecast_15min
+    description: >
+      Day-ahead forecasts of load, wind and solar (MW) per price area and 15-minute
+      interval, from ENTSO-E. Forecasts made the day before, not measurements. Joins to
+      fct_prices_15min on (price_area, interval_start_utc).
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [price_area, interval_start_utc]
+      - expected_intervals_per_day:
+          arguments:
+            partition_by: price_area
+            date_column: delivery_date
+            interval_minutes_column: interval_minutes
+      - contiguous_intervals:
+          arguments:
+            partition_by: price_area
+            start_column: interval_start_utc
+            end_column: interval_end_utc
+            date_column: delivery_date
+    columns:
+      - name: load_mw
+        description: Forecast total load, MW. Null if the TSO published no load forecast.
+      - name: wind_mw
+        description: Forecast wind production (onshore + offshore), MW.
+      - name: solar_mw
+        description: Forecast solar production, MW.
+      - name: is_load_upsampled_from_hourly
+        description: True when the load forecast was hourly and is repeated over four quarters.

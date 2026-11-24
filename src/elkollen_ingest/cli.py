@@ -5,6 +5,8 @@ elkollen-ingest prices --start 2025-09-28 --end 2025-10-03 --areas SE3
 elkollen-ingest prices --sink snowflake     # needs ELKOLLEN_SF_* env vars
 elkollen-ingest prices ... --save-raw fixtures/elpris   # also keep the raw JSON
 elkollen-ingest load-fixtures fixtures/elpris           # offline: JSON files -> sink
+elkollen-ingest entsoe --start 2026-10-01 --end 2026-11-24   # needs ENTSOE_API_TOKEN
+elkollen-ingest load-entsoe-fixtures fixtures/entsoe   # offline: <AREA>_*.xml -> sink
 """
 
 from __future__ import annotations
@@ -136,6 +138,69 @@ def cmd_load_fixtures(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_entsoe(args: argparse.Namespace) -> int:
+    """Day-ahead load, wind and solar forecasts, 31 days per request pair."""
+    from elkollen_ingest.entsoe import EntsoeClient, EntsoeError
+    from elkollen_ingest.sinks import entsoe_rows
+
+    start = args.start or today_stockholm()
+    end = args.end or today_stockholm() + timedelta(days=1)
+    if end < start or (end - start).days + 1 > MAX_DAYS_PER_RUN:
+        log.error("give --start <= --end, at most %s days apart", MAX_DAYS_PER_RUN)
+        return 2
+    run_id = f"entsoe-{uuid.uuid4()}"
+    loaded_at = datetime.now(UTC).replace(tzinfo=None)
+    written, failed = 0, []
+    sink = make_sink(args.sink)
+    try:
+        with EntsoeClient(os.environ.get("ENTSOE_API_TOKEN", "")) as client:
+            first = start
+            while first <= end:
+                last = min(first + timedelta(days=30), end)
+                for area in args.areas:
+                    try:
+                        points = client.fetch(area, first, last)
+                    except EntsoeError as exc:
+                        failed.append(f"{area} {first}..{last}: {exc}")
+                        continue
+                    written += sink.write_table(
+                        "raw.entsoe_forecasts", entsoe_rows(points, run_id, loaded_at)
+                    )
+                first = last + timedelta(days=1)
+    finally:
+        sink.close()
+    log.info("run %s: wrote %s ENTSO-E rows to %s", run_id, written, args.sink)
+    for f in failed:
+        log.error("ENTSO-E request failed, period skipped: %s", f)
+    return 1 if failed else 0
+
+
+def cmd_load_entsoe_fixtures(args: argparse.Namespace) -> int:
+    """Load saved ENTSO-E documents named <AREA>_<anything>.xml, without the network."""
+    from elkollen_ingest.entsoe import parse_document
+    from elkollen_ingest.sinks import entsoe_rows
+
+    files = sorted(Path(args.directory).glob("*.xml"))
+    if not files:
+        log.error("no ENTSO-E fixture files in %s", args.directory)
+        return 2
+    run_id = f"fixtures-{uuid.uuid4()}"
+    loaded_at = datetime.now(UTC).replace(tzinfo=None)
+    sink = make_sink(args.sink)
+    written = 0
+    try:
+        for f in files:
+            area = f.stem.split("_")[0]
+            points = parse_document(area, f.read_bytes())
+            written += sink.write_table(
+                "raw.entsoe_forecasts", entsoe_rows(points, run_id, loaded_at)
+            )
+    finally:
+        sink.close()
+    log.info("loaded %s ENTSO-E rows from %s files", written, len(files))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="elkollen-ingest")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -152,6 +217,18 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("directory")
     f.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
     f.set_defaults(func=cmd_load_fixtures)
+
+    e = sub.add_parser("entsoe", help="fetch day-ahead load/wind/solar forecasts from ENTSO-E")
+    e.add_argument("--start", type=date.fromisoformat, help="first local date (default today)")
+    e.add_argument("--end", type=date.fromisoformat, help="last local date (default tomorrow)")
+    e.add_argument("--areas", type=parse_areas, default=list(AREAS))
+    e.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
+    e.set_defaults(func=cmd_entsoe)
+
+    ef = sub.add_parser("load-entsoe-fixtures", help="load saved ENTSO-E XML into a sink")
+    ef.add_argument("directory")
+    ef.add_argument("--sink", choices=["duckdb", "snowflake"], default="duckdb")
+    ef.set_defaults(func=cmd_load_entsoe_fixtures)
 
     s = sub.add_parser(
         "synthetic-consumption", help="write invented demo users and 15-minute readings"
@@ -202,6 +279,8 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # httpx logs every request URL at INFO; ENTSO-E URLs carry the security token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     args = build_parser().parse_args(argv)
     return args.func(args)
 

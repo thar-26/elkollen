@@ -15,8 +15,12 @@ from elkollen_forecast import model
 
 
 def cmd_backtest(args) -> int:
-    prices = model.load_prices(warehouse_from_env(), args.since)
-    features = model.build_features(prices)
+    wh = warehouse_from_env()
+    prices = model.load_prices(wh, args.since)
+    grid = model.load_grid(wh, args.since)
+    # With grid forecasts, every method is scored only on quarters that have them, so
+    # "prices only" and "with grid forecasts" are compared on exactly the same rows.
+    features = model.build_features(prices, grid=grid if not grid.empty else None)
     results = model.compare_methods(model.walk_forward(features, args.test_days))
     days = sorted(features["local_date"].unique())
     report = {
@@ -24,6 +28,9 @@ def cmd_backtest(args) -> int:
         "test_days": args.test_days,
         "test_period": [str(days[-args.test_days]), str(days[-1])],
         "history_since": str(args.since),
+        "inputs": "prices + ENTSO-E day-ahead load/wind/solar forecasts"
+        if not grid.empty
+        else "prices only",
         "unit": "öre/kWh, mean absolute error",
         "results": results,
     }
@@ -31,7 +38,7 @@ def cmd_backtest(args) -> int:
     Path(args.out).write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     for r in results:
         print(
-            f"{r['area']}  {r['method']:<26} MAE {r['mae_ore_per_kwh']:>7.2f}  "
+            f"{r['area']}  {r['method']:<27} MAE {r['mae_ore_per_kwh']:>7.2f}  "
             f"gain {r['gain_pct'] if r['gain_pct'] is not None else '':>6}%  "
             f"won {r['days_won'] if r['days_won'] is not None else '-':>3}/{r['days']}  "
             f"{r['verdict']}"

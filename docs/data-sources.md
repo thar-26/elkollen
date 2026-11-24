@@ -7,7 +7,7 @@ been read yet and the source must not be used until it has.
 | Source | Used for | Status | Checked |
 |---|---|---|---|
 | elprisetjustnu.se API | Day-ahead spot prices SE1–SE4 | In use (phase 1) | 2026-11-23 |
-| ENTSO-E Transparency Platform | Load, generation, wind forecast | **Unverified**, not used yet | — |
+| ENTSO-E Transparency Platform | Day-ahead load, wind and solar forecasts | In use (ENTSO-E step) | 2026-11-24 (partly, see below) |
 | SMHI open data | Weather observations/forecasts | **Unverified**, not used yet | — |
 
 ## elprisetjustnu.se
@@ -44,11 +44,42 @@ been read yet and the source must not be used until it has.
 2. **Negative prices** are real (e.g. SE1 2025-10-02 18:45: −1.04304 SEK/kWh) and pass
    all checks.
 
-## ENTSO-E Transparency Platform (not yet used)
+## ENTSO-E Transparency Platform
 
-Terms page and API guide could not be fetched from the build environment (HTTP 400/403)
-on 2026-11-23. Before phase 2 uses it, read and record here: how to request a security
-token, the request rate limit, the reuse licence and the attribution wording.
+- **What we fetch:** day-ahead total load forecast (documentType A65, processType A01)
+  and day-ahead wind and solar forecast (A69, A01; psrType B16 solar, B18 wind offshore,
+  B19 wind onshore) for SE1-SE4, from `https://web-api.tp.entsoe.eu/api`.
+- **Token:** free. Register, ask ENTSO-E for RESTful API access, then generate a token
+  under My Account Settings. It lives in `ENTSOE_API_TOKEN` (git-ignored `.env`) and is
+  never logged: the CLI silences httpx request logging and client errors drop the URL
+  (both tested).
+- **Rate limit:** 400 requests per minute per token (ENTSO-E help centre, "API Rate
+  Limit", read 2026-11-24). We pause 0.25 s between requests, retry 429/5xx at most 3
+  times with backoff, and ask for at most 31 days per request.
+- **Reuse:** ENTSO-E announced on 2019-02-01 that TSOs release their data on the
+  platform "under an open data licence", so permission is no longer needed to reuse it
+  ([announcement](https://www.entsoe.eu/news/2019/02/01/tsos-increase-number-of-open-data-available-through-entso-e-s-transparency-platform/)). **Not verified:** the licence name, the
+  exact attribution wording and the platform's current terms page (it did not load
+  outside a browser on 2026-11-24). Until that is read, Elkollen commits **no real
+  ENTSO-E data**: `fixtures/entsoe/` holds invented values in the real XML format, and
+  real data stays in the git-ignored local or Snowflake warehouse. Credited as
+  "ENTSO-E Transparency Platform" in the README.
+- **These are forecasts made the day before, not measurements.** The rules allow wind
+  and solar forecasts to be published as late as 18:00 the day before, after prices
+  (about 13:00), so the backtest assumes they are available earlier than they may be.
+
+### Observed behaviour (2026-11-24)
+
+1. **Repeated values are left out** (curve type A03): a 96-quarter day can arrive with
+   95 points. The parser fills a missing position with the previous value; a gap in a
+   regular (A01) series is refused.
+2. **Resolution changes:** SE3 load is hourly (PT60M) in 2024 and 2025 and 15-minute
+   later; wind and solar are 15-minute. dbt expands hourly values to four quarters and
+   flags them (`is_load_upsampled_from_hourly`).
+3. **"No data" is an Acknowledgement document**, sometimes with HTTP 400; it is read as
+   an empty result, not an error.
+4. 2025-06-01 to 2026-11-25, all four areas: 466,764 rows, and every dbt check passes
+   (96/92/100 quarters per day, no gaps, no duplicates).
 
 ## SMHI open data (not yet used)
 

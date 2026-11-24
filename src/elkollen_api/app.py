@@ -72,23 +72,25 @@ class UploadRequest(BaseModel):
     flexible_share: float = Field(default=0.3, ge=0, le=1)
 
 
-def _backtest_for(area: str) -> dict | None:
-    """This area's ridge vs same-quarter-yesterday numbers from the committed report."""
+def _backtest_for(area: str, method: str = "ridge") -> dict | None:
+    """This area's numbers for `method` vs same-quarter-yesterday from the committed
+    report: always the backtest of the model that produced the forecast shown."""
     path = Path(os.environ.get("ELKOLLEN_BACKTEST_REPORT", "reports/forecast_backtest.json"))
     if not path.exists():
         return None
     report = json.loads(path.read_text(encoding="utf-8"))
     rows = {r["method"]: r for r in report["results"] if r["area"] == area}
-    if "ridge" not in rows:
+    if method not in rows:
         return None
     return {
+        "method": method,
         "test_period": report["test_period"],
-        "ridge_mae_ore_per_kwh": rows["ridge"]["mae_ore_per_kwh"],
+        "ridge_mae_ore_per_kwh": rows[method]["mae_ore_per_kwh"],
         "baseline_mae_ore_per_kwh": rows["same_quarter_yesterday"]["mae_ore_per_kwh"],
-        "gain_pct": rows["ridge"]["gain_pct"],
-        "days_won": rows["ridge"]["days_won"],
-        "days": rows["ridge"]["days"],
-        "verdict": rows["ridge"]["verdict"],
+        "gain_pct": rows[method]["gain_pct"],
+        "days_won": rows[method]["days_won"],
+        "days": rows[method]["days"],
+        "verdict": rows[method]["verdict"],
     }
 
 
@@ -255,13 +257,25 @@ def create_app(
 
             from elkollen_forecast import model
 
-            prices = model.load_prices(wh, day - timedelta(days=400))
-            out = model.forecast_day(prices, area, day)
+            since = day - timedelta(days=400)
+            prices = model.load_prices(wh, since)
+            try:
+                grid = model.load_grid(wh, since)
+            except Exception as exc:  # e.g. the grid mart is not built in this warehouse yet
+                logging.getLogger("elkollen.api").warning(
+                    "grid forecasts unavailable, using prices only: %s", type(exc).__name__
+                )
+                grid = None
+            out = model.forecast_day(prices, area, day, grid=grid)
+            method = out.attrs.get("method", "ridge")
             return {
                 "area": area,
                 "day": day.isoformat(),
                 "published": False,
-                "model": "ridge (ported from thar-26/elpris-forecast)",
+                "model": "ridge with ENTSO-E load/wind/solar forecasts"
+                if method == "ridge_with_grid_forecasts"
+                else "ridge on prices only (ported from thar-26/elpris-forecast)",
+                "method": method,
                 "unit": "öre/kWh",
                 "intervals": [
                     {
@@ -270,7 +284,7 @@ def create_app(
                     }
                     for ts, v in zip(out["start_utc"], out["forecast_ore"], strict=True)
                 ],
-                "backtest": _backtest_for(area),
+                "backtest": _backtest_for(area, method),
             }
 
         try:

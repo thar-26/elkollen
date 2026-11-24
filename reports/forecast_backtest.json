@@ -1,11 +1,12 @@
 {
-  "generated_at_utc": "2026-11-23T22:04:27+00:00",
+  "generated_at_utc": "2026-11-24T10:23:50+00:00",
   "test_days": 60,
   "test_period": [
     "2026-09-26",
     "2026-11-24"
   ],
-  "history_since": "2024-11-01",
+  "history_since": "2025-06-01",
+  "inputs": "prices + ENTSO-E day-ahead load/wind/solar forecasts",
   "unit": "öre/kWh, mean absolute error",
   "results": [
     {
@@ -21,13 +22,24 @@
     },
     {
       "area": "SE1",
-      "method": "ridge",
-      "mae_ore_per_kwh": 23.84,
-      "gain_pct": 15.8,
+      "method": "ridge_with_grid_forecasts",
+      "mae_ore_per_kwh": 21.8,
+      "gain_pct": 23.0,
       "days": 60,
-      "days_won": 38,
-      "gain_low": 0.95,
-      "gain_high": 8.33,
+      "days_won": 42,
+      "gain_low": 2.67,
+      "gain_high": 10.67,
+      "verdict": "beats baseline"
+    },
+    {
+      "area": "SE1",
+      "method": "ridge",
+      "mae_ore_per_kwh": 24.5,
+      "gain_pct": 13.5,
+      "days": 60,
+      "days_won": 37,
+      "gain_low": 0.44,
+      "gain_high": 7.47,
       "verdict": "beats baseline"
     },
     {
@@ -65,13 +77,24 @@
     },
     {
       "area": "SE2",
-      "method": "ridge",
-      "mae_ore_per_kwh": 26.91,
-      "gain_pct": 16.3,
+      "method": "ridge_with_grid_forecasts",
+      "mae_ore_per_kwh": 20.44,
+      "gain_pct": 36.4,
       "days": 60,
-      "days_won": 33,
-      "gain_low": 1.12,
-      "gain_high": 9.82,
+      "days_won": 42,
+      "gain_low": 6.93,
+      "gain_high": 17.03,
+      "verdict": "beats baseline"
+    },
+    {
+      "area": "SE2",
+      "method": "ridge",
+      "mae_ore_per_kwh": 27.68,
+      "gain_pct": 13.9,
+      "days": 60,
+      "days_won": 35,
+      "gain_low": 0.48,
+      "gain_high": 8.93,
       "verdict": "beats baseline"
     },
     {
@@ -109,13 +132,24 @@
     },
     {
       "area": "SE3",
-      "method": "ridge",
-      "mae_ore_per_kwh": 48.11,
-      "gain_pct": 7.1,
+      "method": "ridge_with_grid_forecasts",
+      "mae_ore_per_kwh": 39.31,
+      "gain_pct": 24.1,
       "days": 60,
-      "days_won": 33,
-      "gain_low": -2.24,
-      "gain_high": 9.2,
+      "days_won": 40,
+      "gain_low": 5.32,
+      "gain_high": 19.04,
+      "verdict": "beats baseline"
+    },
+    {
+      "area": "SE3",
+      "method": "ridge",
+      "mae_ore_per_kwh": 47.96,
+      "gain_pct": 7.3,
+      "days": 60,
+      "days_won": 34,
+      "gain_low": -2.33,
+      "gain_high": 9.58,
       "verdict": "not proven"
     },
     {
@@ -153,6 +187,28 @@
     },
     {
       "area": "SE4",
+      "method": "ridge_with_grid_forecasts",
+      "mae_ore_per_kwh": 54.02,
+      "gain_pct": 13.8,
+      "days": 60,
+      "days_won": 37,
+      "gain_low": -0.74,
+      "gain_high": 17.41,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE4",
+      "method": "ridge",
+      "mae_ore_per_kwh": 61.67,
+      "gain_pct": 1.6,
+      "days": 60,
+      "days_won": 31,
+      "gain_low": -7.38,
+      "gain_high": 9.02,
+      "verdict": "not proven"
+    },
+    {
+      "area": "SE4",
       "method": "blend_yesterday_and_week",
       "mae_ore_per_kwh": 61.96,
       "gain_pct": 1.2,
@@ -160,17 +216,6 @@
       "days_won": 32,
       "gain_low": -5.98,
       "gain_high": 7.1,
-      "verdict": "not proven"
-    },
-    {
-      "area": "SE4",
-      "method": "ridge",
-      "mae_ore_per_kwh": 62.45,
-      "gain_pct": 0.4,
-      "days": 60,
-      "days_won": 30,
-      "gain_low": -7.86,
-      "gain_high": 7.9,
       "verdict": "not proven"
     },
     {
