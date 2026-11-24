@@ -1,0 +1,33 @@
+# Render blueprint: the backend (API + internal MCP server) as one free Docker web service.
+# Values marked `sync: false` are secrets or account-specific: Render asks for them when
+# you create the blueprint. Nothing secret is stored in this file. See docs/deploy.md.
+# Free plan: no card needed, sleeps after 15 minutes without traffic (about 1 minute to wake).
+services:
+  - type: web
+    name: elkollen-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      # Which warehouse the demo reads: snowflake now, duckdb later (see docs/deploy.md).
+      - key: ELKOLLEN_WAREHOUSE
+        value: snowflake
+      - key: ELKOLLEN_SF_ACCOUNT
+        sync: false
+      - key: ELKOLLEN_SF_READER_USER
+        sync: false
+      # Upload the READER private key as a Render "secret file" named reader.p8.
+      - key: ELKOLLEN_SF_READER_PRIVATE_KEY_PATH
+        value: /etc/secrets/reader.p8
+      # Shared with the web app on Vercel: the same value in both places.
+      - key: ELKOLLEN_JWT_SECRET
+        sync: false
+      # The web app's address, e.g. https://<your-project>.vercel.app
+      - key: ELKOLLEN_WEB_ORIGIN
+        sync: false
+      - key: ELKOLLEN_AUTH_ISSUER
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
