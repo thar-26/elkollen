@@ -105,7 +105,55 @@ RAW_TABLES: dict[str, tuple[str, ...]] = {
         "ingest_run_id",
         "loaded_at",
     ),
+    "raw.entsoe_forecasts": (
+        "area",
+        "series",
+        "delivery_date",
+        "interval_start_utc",
+        "interval_start_local",
+        "resolution_minutes",
+        "mw",
+        "document_type",
+        "ingest_run_id",
+        "loaded_at",
+    ),
 }
+
+ENTSOE_DDL_DUCKDB = """
+create schema if not exists raw;
+create table if not exists raw.entsoe_forecasts (
+    area varchar not null, series varchar not null, delivery_date date not null,
+    interval_start_utc timestamp not null, interval_start_local timestamp not null,
+    resolution_minutes integer not null, mw double not null, document_type varchar not null,
+    ingest_run_id varchar not null, loaded_at timestamp not null
+);
+"""
+
+ENTSOE_DDL_SNOWFLAKE = """create table if not exists raw.entsoe_forecasts (
+    area varchar not null, series varchar not null, delivery_date date not null,
+    interval_start_utc timestamp_ntz not null, interval_start_local timestamp_ntz not null,
+    resolution_minutes integer not null, mw float not null, document_type varchar not null,
+    ingest_run_id varchar not null, loaded_at timestamp_ntz not null
+) comment = 'Append-only day-ahead load, wind and solar forecasts from ENTSO-E.'"""
+
+
+def entsoe_rows(points, run_id: str, loaded_at: datetime) -> list[tuple]:
+    return [
+        (
+            p.area,
+            p.series,
+            p.delivery_date,
+            p.start_utc,
+            p.start_local,
+            p.resolution_minutes,
+            p.mw,
+            p.document_type,
+            run_id,
+            loaded_at,
+        )
+        for p in points
+    ]
+
 
 APP_DDL_DUCKDB = """
 create schema if not exists raw;
@@ -154,6 +202,7 @@ class DuckDBSink:
         self._con = duckdb.connect(str(path))
         self._con.execute(DUCKDB_DDL)
         self._con.execute(APP_DDL_DUCKDB)
+        self._con.execute(ENTSOE_DDL_DUCKDB)
 
     def write_table(self, table: str, rows: Sequence[tuple]) -> int:
         if not rows:
@@ -179,7 +228,7 @@ class SnowflakeSink:
         cur = self._con.cursor()
         try:
             cur.execute(SNOWFLAKE_DDL)
-            for ddl in APP_DDL_SNOWFLAKE:
+            for ddl in (*APP_DDL_SNOWFLAKE, ENTSOE_DDL_SNOWFLAKE):
                 cur.execute(ddl)
         finally:
             cur.close()
