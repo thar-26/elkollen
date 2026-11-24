@@ -31,8 +31,12 @@ ENERGY_ONLY_NOTE = (
     "Spot price only: excludes VAT, energy tax, supplier markup, certificates and grid fees."
 )
 NO_DRIVER_DATA_NOTE = (
-    "Load, wind and weather data are not connected yet, so causes are inferred from prices "
-    "alone (time of day, history and price differences between areas)."
+    "No load or wind forecast is stored for this interval, so causes are inferred from "
+    "prices alone (time of day, history and price differences between areas)."
+)
+GRID_NOTE = (
+    "Load, wind and solar are day-ahead forecasts from the ENTSO-E Transparency Platform "
+    "(published by the Swedish TSO), not measurements. Weather and imports are not included."
 )
 
 
@@ -536,6 +540,41 @@ def explain_spike(wh: Warehouse, area: str, interval_start_utc: datetime) -> Res
             "suggests_congestion": bool(spread and spread > 1),
         }
     )
+
+    # Day-ahead grid forecasts for the same quarter, against the area's 30-day average.
+    grid, t3 = _fetch(
+        wh,
+        """select
+               max(case when interval_start_utc = :t then load_mw end)  as load_mw,
+               max(case when interval_start_utc = :t then wind_mw end)  as wind_mw,
+               max(case when interval_start_utc = :t then solar_mw end) as solar_mw,
+               avg(case when interval_start_utc < :t then load_mw end)  as load_avg_30d,
+               avg(case when interval_start_utc < :t then wind_mw end)  as wind_avg_30d,
+               sum(case when interval_start_utc = :t then 1 else 0 end) as n_target
+           from marts.fct_grid_forecast_15min
+           where price_area = :area
+             and interval_start_utc >= :month_ago
+             and interval_start_utc <= :t""",
+        {"area": area, "month_ago": month_ago, "t": interval_start_utc},
+    )
+    g = grid[0] if grid else {}
+    has_grid = bool(g.get("n_target"))
+    if has_grid:
+
+        def ratio(value, average):
+            value, average = _num(value), _num(average)
+            return _num(value / average, 2) if value is not None and average else None
+
+        observations.append(
+            {
+                "kind": "grid_forecast",
+                "load_mw": _num(g["load_mw"], 0),
+                "wind_mw": _num(g["wind_mw"], 0),
+                "solar_mw": _num(g["solar_mw"], 0),
+                "load_vs_30d_avg_ratio": ratio(g["load_mw"], g["load_avg_30d"]),
+                "wind_vs_30d_avg_ratio": ratio(g["wind_mw"], g["wind_avg_30d"]),
+            }
+        )
     return Result(
         tool="explain_spike",
         inputs={"area": area, "interval_start_utc": interval_start_utc},
@@ -549,10 +588,11 @@ def explain_spike(wh: Warehouse, area: str, interval_start_utc: datetime) -> Res
             },
             "observations": observations,
         },
-        rows_read=len(same_time) + len(context),
-        truncated=t1 or t2,
-        sources=["marts.fct_prices_15min"],
-        notes=[ENERGY_ONLY_NOTE, NO_DRIVER_DATA_NOTE],
+        rows_read=len(same_time) + len(context) + len(grid),
+        truncated=t1 or t2 or t3,
+        sources=["marts.fct_prices_15min"]
+        + (["marts.fct_grid_forecast_15min"] if has_grid else []),
+        notes=[ENERGY_ONLY_NOTE, GRID_NOTE if has_grid else NO_DRIVER_DATA_NOTE],
     )
 
 
