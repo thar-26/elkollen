@@ -238,7 +238,8 @@ class SnowflakeSink:
         import snowflake.connector
 
         def required(name: str) -> str:
-            value = os.environ.get(name)
+            # Strip: a value pasted into a CI or hosting dashboard often ends in a newline.
+            value = (os.environ.get(name) or "").strip()
             if not value:
                 raise RuntimeError(f"environment variable {name} is not set (see .env.example)")
             return value

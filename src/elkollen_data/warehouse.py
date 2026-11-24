@@ -67,7 +67,8 @@ class SnowflakeWarehouse:
             import snowflake.connector
 
             def required(key: str) -> str:
-                value = os.environ.get(key)
+                # Strip: a value pasted into a hosting dashboard often ends in a newline.
+                value = (os.environ.get(key) or "").strip()
                 if not value:
                     raise RuntimeError(f"environment variable {key} is not set (see .env.example)")
                 return value
