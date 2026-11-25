@@ -52,9 +52,15 @@ def test_forecast_shows_the_backtest_of_the_model_it_used(warehouse, monkeypatch
     grid = pd.DataFrame(
         {"area": "SE3", "start_utc": grid_idx, "load_mw": 1e4, "wind_mw": 900.0, "solar_mw": 0.0}
     )
-    monkeypatch.setattr(model, "load_prices", lambda wh, since: prices)
 
-    def load_grid(wh, since):
+    def load_prices(wh, since, area=None):
+        assert area == "SE3"  # the API loads only the requested area
+        return prices
+
+    monkeypatch.setattr(model, "load_prices", load_prices)
+
+    def load_grid(wh, since, area=None):
+        assert area == "SE3"
         if with_grid is None:
             raise RuntimeError("table marts.fct_grid_forecast_15min does not exist")
         return grid if with_grid else grid.iloc[0:0]
@@ -70,6 +76,46 @@ def test_forecast_shows_the_backtest_of_the_model_it_used(warehouse, monkeypatch
     assert len(body["intervals"]) == 96
     assert body["method"] == expected
     assert body["backtest"]["method"] == expected  # numbers of the model actually used
+
+
+def test_health_answers_while_forecast_waits_on_a_slow_warehouse(warehouse):
+    """Render restarts the service when /health takes over 5 s. Warehouse calls must run
+    in worker threads, never on the event loop, so a slow query cannot freeze /health."""
+    import time
+
+    import anyio
+    import httpx
+
+    from elkollen_api.app import create_app
+
+    class SlowWarehouse:
+        name = warehouse.name
+
+        def fetch(self, sql, params=None):
+            time.sleep(1.5)  # a slow Snowflake query
+            return warehouse.fetch(sql, params)
+
+    app = create_app(SlowWarehouse(), SECRET)
+    timings = {}
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+
+            async def slow_forecast():
+                await client.get("/forecast", params={"area": "SE3", "day": "2025-10-06"})
+
+            async with anyio.create_task_group() as tg:
+                # Timer starts before the pause: a blocked event loop also delays the pause.
+                start = time.monotonic()
+                tg.start_soon(slow_forecast)
+                await anyio.sleep(0.2)  # the forecast request is now inside its slow query
+                r = await client.get("/health")
+                timings["health"] = time.monotonic() - start
+                assert r.status_code == 200
+
+    anyio.run(scenario)
+    assert timings["health"] < 1.0, f"/health answered after {timings['health']:.2f}s"
 
 
 @pytest.mark.parametrize("path", ["/alerts", "/forecast"])

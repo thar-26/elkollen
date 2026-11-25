@@ -242,25 +242,36 @@ def _forecast_day_prices_only(prices: pd.DataFrame, area: str, day: date) -> pd.
     return out
 
 
-def load_grid(wh, since: date) -> pd.DataFrame:
-    """ENTSO-E day-ahead load, wind and solar forecasts (MW) since `since`."""
-    rows = wh.fetch(
-        "select price_area as area, interval_start_utc as start_utc, load_mw, wind_mw, solar_mw "
-        "from marts.fct_grid_forecast_15min where delivery_date >= :since order by 1, 2",
-        {"since": since},
+def _area_filter(area: str | None) -> tuple[str, dict]:
+    """Optional single-area filter (bound parameter, never formatted into the SQL)."""
+    return (" and price_area = :area", {"area": area}) if area else ("", {})
+
+
+def load_grid(wh, since: date, area: str | None = None) -> pd.DataFrame:
+    """ENTSO-E day-ahead load, wind and solar forecasts (MW) since `since`, for one area
+    or (default) all areas."""
+    where, params = _area_filter(area)
+    sql = (  # fixed SQL; the area is a bound parameter, never formatted in
+        "select price_area as area, interval_start_utc as start_utc, "  # noqa: S608
+        "load_mw, wind_mw, solar_mw "
+        f"from marts.fct_grid_forecast_15min where delivery_date >= :since{where} order by 1, 2"
     )
+    rows = wh.fetch(sql, {"since": since, **params})
     frame = pd.DataFrame(rows, columns=["area", "start_utc", *GRID_FEATURES])
     frame["start_utc"] = pd.to_datetime(frame["start_utc"]).dt.tz_localize("UTC")
     return frame
 
 
-def load_prices(wh, since: date) -> pd.DataFrame:
-    """All 15-minute prices since `since`, from the warehouse (DuckDB or Snowflake)."""
-    rows = wh.fetch(
-        "select price_area as area, interval_start_utc as start_utc, price_ore_per_kwh as ore "
-        "from marts.fct_prices_15min where delivery_date >= :since order by 1, 2",
-        {"since": since},
+def load_prices(wh, since: date, area: str | None = None) -> pd.DataFrame:
+    """15-minute prices since `since`, for one area or (default) all areas, from the
+    warehouse (DuckDB or Snowflake)."""
+    where, params = _area_filter(area)
+    sql = (  # fixed SQL; the area is a bound parameter, never formatted in
+        "select price_area as area, interval_start_utc as start_utc, "  # noqa: S608
+        "price_ore_per_kwh as ore "
+        f"from marts.fct_prices_15min where delivery_date >= :since{where} order by 1, 2"
     )
+    rows = wh.fetch(sql, {"since": since, **params})
     frame = pd.DataFrame(rows, columns=["area", "start_utc", "ore"])
     frame["start_utc"] = pd.to_datetime(frame["start_utc"]).dt.tz_localize("UTC")
     frame["ore"] = frame["ore"].astype(float)
