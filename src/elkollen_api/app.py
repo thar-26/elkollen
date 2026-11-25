@@ -245,7 +245,11 @@ def create_app(
     async def forecast(area: Area, day: date) -> dict:
         """Ridge forecast (ported from elpris-forecast) for a day whose prices are not
         published yet, with this area's honest backtest numbers attached."""
-        published = queries.get_prices(wh, area, day, day).data["summary"] is not None
+        # Every warehouse call runs in a worker thread: a blocking Snowflake query on the
+        # event loop would freeze all requests, including the platform's health check.
+        published = await anyio.to_thread.run_sync(
+            lambda: queries.get_prices(wh, area, day, day).data["summary"] is not None
+        )
         if published:
             return {"area": area, "day": day.isoformat(), "published": True, "intervals": []}
         cached = forecast_cache.get((area, day))
@@ -258,9 +262,10 @@ def create_app(
             from elkollen_forecast import model
 
             since = day - timedelta(days=400)
-            prices = model.load_prices(wh, since)
+            # One area only: a quarter of the data, memory and CPU of loading all four.
+            prices = model.load_prices(wh, since, area=area)
             try:
-                grid = model.load_grid(wh, since)
+                grid = model.load_grid(wh, since, area=area)
             except Exception as exc:  # e.g. the grid mart is not built in this warehouse yet
                 logging.getLogger("elkollen.api").warning(
                     "grid forecasts unavailable, using prices only: %s", type(exc).__name__
@@ -335,9 +340,10 @@ def create_app(
         from elkollen_chat.llm import ChatModelError, GroqChatModel
 
         try:
-            if queries.is_deleted(wh, user_id):
+            deleted = await anyio.to_thread.run_sync(queries.is_deleted, wh, user_id)
+            if deleted:
                 raise HTTPException(status_code=403, detail="this account has been deleted")
-            profile = queries.user_profile(wh, user_id)
+            profile = await anyio.to_thread.run_sync(queries.user_profile, wh, user_id)
         except QueryInputError:
             raise HTTPException(status_code=403, detail="invalid user") from None
         if not limiter.allow(user_id):
