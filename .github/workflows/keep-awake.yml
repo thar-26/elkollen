@@ -1,0 +1,37 @@
+name: Keep backend awake
+
+# Render's free plan puts the backend to sleep after 15 minutes without traffic; the
+# next visitor then waits about a minute. A request to /health every 10 minutes keeps it
+# awake. /health does not touch Snowflake, so this costs no warehouse credits.
+#
+# Limits, stated honestly:
+# * GitHub may start scheduled runs late, so a gap over 15 minutes (and one slow first
+#   visit) can still happen now and then.
+# * Awake all month uses about 720-744 of the free plan's 750 instance-hours; this only
+#   fits while it is the account's only free Render service.
+# * GitHub disables scheduled workflows in a repository with no activity for 60 days.
+# Switch it off with the repository variable KEEP_AWAKE=false.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    if: vars.KEEP_AWAKE != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Ping /health
+        # A sleeping instance takes about a minute to wake, hence the long timeout and retries.
+        run: >
+          curl --fail --silent --show-error --max-time 90
+          --retry 3 --retry-delay 15 --retry-all-errors
+          https://elkollen-api.onrender.com/health
