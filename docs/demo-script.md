@@ -4,8 +4,8 @@ For a live demo or a screen recording. Everything shown uses public prices and
 **invented** demo users; no real personal data.
 
 Before you start (5 minutes earlier):
-- Open the web app once. The free backend sleeps after 15 minutes without visitors and
-  takes about a minute to wake up.
+- Open the web app once. A ping every 10 minutes keeps the free backend awake, but if
+  GitHub ran it late the backend may be asleep and take about a minute to wake up.
 - Have [fixtures/consumption/exempel_timvarden.csv](../fixtures/consumption/exempel_timvarden.csv)
   ready to upload (invented hourly readings for one month, including the clock change).
 - Check the questions in step 4 still give a good answer today; prices change every day.
